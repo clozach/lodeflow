@@ -16,7 +16,7 @@ async function copyShell() {
     .replace("connect-src 'none'", "connect-src 'self'")
     .replace('</head>', '<script type="module" src="./dev-reload.mjs"></script></head>');
   await writeFile(`${output}/index.html`, html);
-  await writeFile(`${output}/favicon.svg`, await readFile(`${root}/site/favicon.svg`));
+  for (const name of ['favicon.svg', 'logo.svg']) await writeFile(`${output}/${name}`, await readFile(`${root}/site/${name}`));
 }
 await copyShell();
 await writeFile(`${output}/dev-reload.mjs`, "new EventSource('./__live').onmessage = () => location.reload();\n");
@@ -49,7 +49,7 @@ const server = createServer(async (req, res) => {
 });
 server.listen(Number(process.argv[2] || 5207), '0.0.0.0');
 const shell = watch(`${root}/site`, async (_, name) => {
-  if (!['index.html', 'favicon.svg'].includes(name)) return;
+  if (!['index.html', 'favicon.svg', 'logo.svg'].includes(name)) return;
   await copyShell();
   reload();
 });

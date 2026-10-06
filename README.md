@@ -1,4 +1,4 @@
-# lodeflow
+<h1><picture><source media="(prefers-color-scheme: dark)" srcset="site/logo-dark.svg"><img src="site/logo.svg" alt="lodeflow" width="150"></picture></h1>
 
 Self-organizing flow diagrams for the web. A Rust layout engine, compiled to WebAssembly, arranges the diagram by the ten Flying Logic layout rules. A framework-free `<lode-flow>` custom element draws it and animates every change. The same element works in React, Svelte and plain HTML.
 
@@ -25,7 +25,7 @@ Open `http://localhost:5207/`. Source changes rebuild and reload the preview aut
   engine/     Rust crate (no_std + alloc on wasm32): graph → ranks → order → coordinates → routes
   web/        TypeScript custom element, React wrapper, esbuild bundles in dist/
   examples/   standalone page, read-only embed, React and Svelte usage, sample diagram
-  scripts/    builds and live tutorial preview
+  scripts/    builds, live tutorial preview, logo (build-logo.mjs draws site/logo*.svg and favicon.svg)
   site/       localStorage-only guided demo; built output in dist/
 ```
 

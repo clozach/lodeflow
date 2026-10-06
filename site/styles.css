@@ -14,7 +14,7 @@ a { color: inherit; }
 .masthead, main { width: min(1440px, calc(100% - 80px)); margin: 0 auto; }
 .masthead { display: flex; align-items: center; justify-content: space-between; padding: 26px 0 0; }
 .brand { text-decoration: none; font-size: 23px; font-weight: 720; letter-spacing: -.8px; display: flex; align-items: center; gap: 10px; }
-.brand-mark { display: grid; place-items: center; width: 29px; height: 29px; border-radius: 8px; color: #f5f6ef; background: var(--green); font-size: 23px; font-weight: 400; }
+.brand-logo { display: block; width: auto; height: 50px; }
 .source-link { font-size: 13px; text-decoration: none; color: var(--muted); }
 .source-link:hover { color: var(--green); text-decoration: underline; }
 .intro { padding: 28px 0 20px; }
@@ -66,7 +66,7 @@ kbd { padding: 0 4px; border: 1px solid #cbd3c6; border-radius: 3px; font-size: 
 .footer .capacity { margin-top: 4px; padding-left: 20px; font-size: 10px; }
 @media (min-width: 1650px) { .workspace { grid-template-columns: minmax(0, 1fr) 300px; } }
 @media (max-width: 900px) { .masthead, main { width: calc(100% - 36px); } .workspace { grid-template-columns: minmax(0, 1fr) 245px; gap: 16px; } .toolbar { gap: 8px; padding: 9px; } .toolbar button { padding: 8px; } .item-count { font-size: 10px; } .intro { padding-top: 32px; } }
-@media (max-width: 700px) { .masthead { padding-top: 18px; } .intro { padding: 27px 0 20px; } h1 { letter-spacing: -1.5px; } .lede { font-size: 15px; } .lede strong { display: block; } .workspace { display: flex; flex-direction: column; gap: 16px; } .playground { width: 100%; } .canvas-frame { height: 440px; } .guide { width: 100%; padding: 6px 2px; } h2 { font-size: 23px; margin: 10px 0; } .guide p { margin-bottom: 12px; } .guide-nav { margin: 14px 0; } .step-list { display: inline-flex; } .guide .guide-footnote { margin-top: 10px; } .footer { padding-top: 14px; } .item-count { margin-left: auto; } .source-link { font-size: 11px; } }
+@media (max-width: 700px) { .masthead { padding-top: 18px; } .brand-logo { height: 42px; } .intro { padding: 27px 0 20px; } h1 { letter-spacing: -1.5px; } .lede { font-size: 15px; } .lede strong { display: block; } .workspace { display: flex; flex-direction: column; gap: 16px; } .playground { width: 100%; } .canvas-frame { height: 440px; } .guide { width: 100%; padding: 6px 2px; } h2 { font-size: 23px; margin: 10px 0; } .guide p { margin-bottom: 12px; } .guide-nav { margin: 14px 0; } .step-list { display: inline-flex; } .guide .guide-footnote { margin-top: 10px; } .footer { padding-top: 14px; } .item-count { margin-left: auto; } .source-link { font-size: 11px; } }
 @media (max-width: 390px) { .masthead, main { width: calc(100% - 24px); } .toolbar { gap: 7px; } .appearance { gap: 5px; } select { max-width: 114px; padding-left: 8px; font-size: 12px; } .history-controls { gap: 3px; } .toolbar button { padding: 6px; font-size: 12px; } .item-count { width: 100%; text-align: right; margin-top: -2px; } }
 @media (max-width: 700px) { .tab-notice { align-items: start; flex-direction: column; gap: 8px; } }
 @media (max-width: 700px) { .mobile-gesture { display: block; margin: 0; padding: 10px 14px; color: var(--muted); font-size: 11px; line-height: 1.5; background: #f3f6ee; border-bottom: 1px solid var(--line); } }

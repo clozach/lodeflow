@@ -928,9 +928,22 @@ await scenario('a link held near the frame’s edge eases the view that way: a q
     flow.setState({ view: { cam: { ...flow.camera, z: flow.camera.z * 1.953125 }, follow: false } });
   });
   await settle(page, 900);
+  // System fonts can change the sample's heights. Center the source/target pair
+  // vertically so both cards fit and the sideways hold avoids the vertical bands.
+  await E(page, () => {
+    const flow = document.querySelector('lode-flow');
+    const frame = flow.getBoundingClientRect();
+    const source = flow.shadowRoot.querySelector('.node[data-id="slip"]').getBoundingClientRect();
+    const target = flow.shadowRoot.querySelector('.node[data-id="parallel"]').getBoundingClientRect();
+    const pairCenter = (Math.min(source.top, target.top) + Math.max(source.bottom, target.bottom)) / 2;
+    flow.setState({ view: { cam: { ...flow.camera, y: flow.camera.y + (pairCenter - frame.y - frame.height / 2) / flow.camera.z }, follow: false } });
+  });
+  await settle(page, 500);
   const slip = await center(page, '.node[data-id="slip"]');
   let par = await center(page, '.node[data-id="parallel"]');
   assert.ok(slip.x - slip.w / 2 > f.x && slip.x + slip.w / 2 < right, 'the source is in view');
+  assert.ok(slip.y - slip.h / 2 > f.y && slip.y + slip.h / 2 < f.y + f.h, 'the source is vertically in view');
+  assert.ok(par.y > f.y + 80 && par.y < f.y + f.h - 80, 'the target stays away from vertical edge bands');
   assert.ok(par.x - par.w / 2 > right, 'the target starts out of view, past the right edge');
   const cam0 = (await el(page)).cam;
   const h0 = (await history(page)).length;

@@ -1,0 +1,3 @@
+[build]
+# Build into a dot-dir so Obsidian's file watcher skips it.
+target-dir = ".target"

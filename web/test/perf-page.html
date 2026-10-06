@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>lodeflow perf harness</title>
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; }
+  #frame { width: 1200px; height: 760px; }
+  lode-flow { height: 100%; }
+</style>
+<script src="../dist/lode-flow.iife.js"></script>
+<script type="module">
+  import { generate } from './gen.mjs';
+  import * as perf from './perf-core.mjs';
+  window.perf = { ...perf, generate };
+  window.perfReady = true;
+</script>
+</head>
+<body>
+<div id="frame"><lode-flow id="flow"></lode-flow></div>
+</body>
+</html>

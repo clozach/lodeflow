@@ -1,0 +1,16 @@
+[package]
+name = "lodeflow-layout"
+version = "0.1.0"
+edition = "2021"
+description = "Layered flow-diagram layout engine following the ten Flying Logic layout rules. no_std + alloc on wasm32."
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+opt-level = 3
+lto = true
+panic = "abort"
+codegen-units = 1
+strip = true

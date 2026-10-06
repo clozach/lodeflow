@@ -1,0 +1,24 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lodeflow — read-only embed</title>
+<!-- A static site needs one script and one element. The classic-script build also works from file://. -->
+<script src="../web/dist/lode-flow.iife.js"></script>
+<article style="max-width: 720px; margin: 24px auto; font: 16px/1.5 Georgia, serif; padding: 0 16px">
+  <p>Prose before the diagram. Scrolling the page past the diagram keeps working until a reader clicks it.</p>
+  <lode-flow readonly style="height: 360px; border-radius: 10px">
+    <script type="application/json">
+      {
+        "nodes": [
+          { "id": "a", "text": "Seed" }, { "id": "b", "text": "Sprout" }, { "id": "c", "text": "Leaf" },
+          { "id": "d", "text": "Flower" }, { "id": "e", "text": "Fruit" }
+        ],
+        "edges": [
+          { "from": "a", "to": "b" }, { "from": "b", "to": "c" }, { "from": "b", "to": "d" },
+          { "from": "d", "to": "e" }, { "from": "e", "to": "a" }
+        ]
+      }
+    </script>
+  </lode-flow>
+  <p>Prose after the diagram.</p>
+</article>

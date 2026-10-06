@@ -1,0 +1,66 @@
+name: Verify and publish demo
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install pnpm
+        run: corepack enable && corepack prepare pnpm@10.26.0 --activate
+      - name: Install web dependencies
+        run: pnpm --dir web install --frozen-lockfile
+      - name: Build WebAssembly engine
+        run: rustup target add wasm32-unknown-unknown && bash scripts/build-wasm.sh
+      - name: Build web component
+        run: pnpm --dir web build
+      - name: Rust engine tests
+        run: cargo test --release --manifest-path engine/Cargo.toml
+      - name: Install test browsers
+        run: pnpm --dir web exec playwright install --with-deps chromium firefox webkit
+      - name: Component tests
+        working-directory: web
+        run: node test/model.mjs && node test/geometry.mjs && node test/history.mjs && node test/theme.mjs && node test/limits.mjs && node test/placement.mjs && node test/e2e.mjs
+      - name: Build tutorial
+        run: node scripts/build-site.mjs
+      - name: Tutorial tests
+        working-directory: web
+        run: node test/tutorial.mjs
+      - name: Setup Pages
+        if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@v5
+      - name: Upload site
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site/dist
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish
+        id: deployment
+        uses: actions/deploy-pages@v4

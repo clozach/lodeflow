@@ -1,0 +1,53 @@
+{
+  "name": "lodeflow",
+  "version": "0.1.0",
+  "description": "Self-organizing flow diagrams for the web: a Rust/WASM layout engine that follows the ten Flying Logic layout rules, wrapped in a <lode-flow> web component.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/lode-flow.js",
+  "module": "./dist/lode-flow.js",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/lode-flow.js"
+    },
+    "./react": {
+      "types": "./dist/types/react.d.ts",
+      "import": "./dist/react.js"
+    },
+    "./iife": "./dist/lode-flow.iife.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": [
+    "./dist/lode-flow.js",
+    "./dist/lode-flow.iife.js"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "node test/model.mjs && node test/geometry.mjs && node test/history.mjs && node test/limits.mjs && node test/placement.mjs && node test/e2e.mjs"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "esbuild": "^0.25.0",
+    "playwright": "^1.63.0",
+    "typescript": "^5.9.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

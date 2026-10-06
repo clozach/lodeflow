@@ -1,0 +1,35 @@
+{
+  "settings": { "orientation": "auto", "bias": "start", "compactness": "comfortable", "incremental": false },
+  "groups": [
+    { "id": "planning", "text": "Planning" },
+    { "id": "delivery", "text": "Delivery" }
+  ],
+  "nodes": [
+    { "id": "specs", "text": "Specs change after the build starts", "group": "planning" },
+    { "id": "dod", "text": "No shared definition of done", "group": "planning" },
+    { "id": "estimates", "text": "Estimates are guesses", "group": "planning" },
+    { "id": "rework", "text": "Rework piles up", "group": "delivery" },
+    { "id": "juggle", "text": "The team juggles four projects at once" },
+    { "id": "switching", "text": "Context switching eats focus", "group": "delivery" },
+    { "id": "cycle", "text": "Cycle time grows", "group": "delivery" },
+    { "id": "slip", "text": "The release slips" },
+    { "id": "pressure", "text": "Stakeholders push harder" },
+    { "id": "parallel", "text": "More work starts in parallel" },
+    { "id": "wip", "text": "No work-in-progress limit" },
+    { "id": "trust", "text": "Customers lose trust" }
+  ],
+  "edges": [
+    { "from": "specs", "to": "rework" },
+    { "from": "dod", "to": "rework" },
+    { "from": "rework", "to": "cycle" },
+    { "from": "juggle", "to": "switching" },
+    { "from": "switching", "to": "cycle" },
+    { "from": "cycle", "to": "slip" },
+    { "from": "estimates", "to": "pressure" },
+    { "from": "slip", "to": "pressure" },
+    { "from": "slip", "to": "trust" },
+    { "from": "pressure", "to": "parallel" },
+    { "from": "wip", "to": "parallel" },
+    { "from": "parallel", "to": "juggle" }
+  ]
+}

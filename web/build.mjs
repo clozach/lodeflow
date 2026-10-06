@@ -31,7 +31,7 @@ if (watch) {
   await ctx.watch();
   for (const b of rest) await (await esbuild.context(b)).watch();
   const { port } = await ctx.serve({ servedir: '..', port: Number(process.env.PORT || 5207), host: '0.0.0.0' });
-  console.log(`dev: http://t.local:${port}/examples/standalone.html?live (reloads on every rebuild)`);
+  console.log(`dev: http://localhost:${port}/examples/standalone.html?live (reloads on every rebuild)`);
 } else {
   for (const b of builds) await esbuild.build(b);
   // The local TypeScript, run by this Node (a stray global npx can point at another Node).

@@ -207,6 +207,38 @@ try {
         assert.equal((await docOf(page)).nodes[0].text, 'Unfinished draft');
       });
 
+      await scenario(browser, `${name}: page-wide appearance and notices leave phone controls reachable`, async (page, context) => {
+        await page.goto(url); await ready(page); await start(page); await help(page, true);
+        await page.locator('#appearance').selectOption('blueprint');
+        const themes = () => page.evaluate(() => [document.documentElement.dataset.theme, document.querySelector('#guide').getAttribute('theme'), document.querySelector('#flow').getAttribute('theme')]);
+        assert.deepEqual(await themes(), ['blueprint', 'blueprint', 'blueprint']);
+        assert.match(await page.locator('.brand-logo').getAttribute('src'), /logo-dark/);
+        assert.equal(await page.locator('meta[name="theme-color"]').getAttribute('content'), '#102641');
+        await page.reload(); await ready(page); assert.deepEqual(await themes(), ['blueprint', 'blueprint', 'blueprint']);
+        await help(page, true); await page.locator('#reset').click(); await page.locator('#notice').waitFor({state:'visible'});
+        const clear = async () => {
+          await page.locator('.source-link').scrollIntoViewIfNeeded();
+          await page.waitForFunction(() => {
+            const bottom = document.querySelector('#flow').getBoundingClientRect().bottom;
+            return [...document.querySelectorAll('.practice-frame > .notice:not([hidden])')].every(el => el.getBoundingClientRect().top >= bottom);
+          });
+          const box = await page.locator('#reset').boundingBox(), toast = await page.locator('#notice').boundingBox();
+          assert.ok(box.y + box.height + 8 <= toast.y, 'reset controls have clearance above the toast');
+          assert.equal(await page.locator('#reset').evaluate(button => document.elementFromPoint(button.getBoundingClientRect().x + 10, button.getBoundingClientRect().y + 10) === button), true, 'the toast cannot intercept reset taps');
+        };
+        for (const height of [560, 700, 844]) { await page.setViewportSize({width:393,height}); await clear(); }
+        await page.evaluate(() => { Storage.prototype.setItem = () => { throw new DOMException('Full', 'QuotaExceededError'); }; const flow = document.querySelector('#flow'); flow.setDoc({...flow.doc, nodes:[{id:'warning',text:'Still editable'}]}, {resetHistory:false}); });
+        await page.waitForFunction(() => document.querySelector('#notice').textContent.includes('Browser storage is full')); await clear();
+        const other = await context.newPage(); await other.goto(url); await ready(other); await start(other); await waitProgress(other, 0);
+        await page.locator('#tab-notice').waitFor({state:'visible'}); await clear();
+        await other.locator('#flow [data-act="help"]').tap(); await other.locator('#appearance').selectOption('light');
+        await page.waitForFunction(() => document.documentElement.dataset.theme === 'light');
+        assert.deepEqual(await themes(), ['light','light','light']); await clear();
+        await page.locator('#appearance').selectOption('blueprint'); await page.locator('#hard-reset').click();
+        assert.deepEqual(await themes(), ['light','light','light']); await undoHidden(page);
+        assert.match(await page.locator('.brand-logo').getAttribute('src'), /logo.svg/);
+      }, {viewport:{width:393,height:700},hasTouch:true});
+
       await scenario(browser, `${name}: phone instructions, native touch linking, menus and Blueprint`, async (page) => {
         await page.goto(url); await ready(page);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);

@@ -12,6 +12,14 @@ let saving = { kind: 'local' }, pendingSaved = null, initializing = true;
 let touch = matchMedia('(pointer: coarse)').matches;
 const notice = (message) => { $('notice').textContent = message; $('notice').hidden = !message; };
 
+function applyAppearance(theme) {
+  document.documentElement.dataset.theme = theme;
+  for (const chart of [flow, $('guide')]) chart.setAttribute('theme', theme);
+  $('appearance').value = theme;
+  document.querySelector('.brand-logo').src = theme === 'blueprint' ? './logo-dark.svg' : './logo.svg';
+  document.querySelector('meta[name="theme-color"]').content = theme === 'blueprint' ? '#102641' : '#ffffff';
+}
+
 function renderStatus() {
   $('item-count').textContent = `${countItems(flow.doc)} / 100 items`;
   $('item-count').classList.toggle('full', countItems(flow.doc) >= 100);
@@ -148,7 +156,7 @@ function hardReset() {
   bindFlow(flow);
   previous.replaceWith(flow);
   flow.setAttribute('storage-key', storageKey);
-  $('appearance').value = 'light';
+  applyAppearance('light');
   pendingSaved = null; $('tab-notice').hidden = true;
   checkpoints = [];
   restartGuide();
@@ -163,8 +171,7 @@ function hardReset() {
 
 const checked = inspectStorage(storage, savedKey);
 saving = { kind: checked.kind };
-flow.setAttribute('theme', checked.appearance);
-$('appearance').value = checked.appearance;
+applyAppearance(checked.appearance);
 notice(checked.message);
 bindFlow(flow);
 try {
@@ -190,7 +197,7 @@ try {
     $('guide').showSelection();
   });
   $('appearance').addEventListener('change', (event) => {
-    flow.setAttribute('theme', event.target.value);
+    applyAppearance(event.target.value);
     try { storage.setItem(appearanceKey, event.target.value); } catch { /* diagram saving reports its own failures */ }
   });
   $('reset').addEventListener('click', () => {
@@ -206,7 +213,7 @@ try {
   $('hard-reset').addEventListener('click', hardReset);
   window.addEventListener('storage', (event) => {
     if (event.key === appearanceKey && (event.newValue === null || ['light', 'blueprint'].includes(event.newValue))) {
-      flow.setAttribute('theme', event.newValue || 'light'); $('appearance').value = event.newValue || 'light'; return;
+      applyAppearance(event.newValue || 'light'); return;
     }
     if (event.key === progressKey && pendingSaved) {
       const progress = readProgress(storage, pendingSaved.rev);

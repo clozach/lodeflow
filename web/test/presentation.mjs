@@ -43,6 +43,13 @@ try {
         const nodes = [...document.getElementById('graph').shadowRoot.querySelectorAll('.node[data-id]')];
         return nodes.length === 3 && nodes.every((node) => node.disabled === disabled.includes(node.dataset.id));
       }, disabled, { timeout: 5000 });
+      const parentRevealRendered = (target) => page.waitForFunction((target) => {
+        const f = document.getElementById('graph');
+        const el = typeof target === 'string' ? f.shadowRoot.querySelector(`[data-id="${target}"]`) : f.shadowRoot.querySelectorAll('.edge')[target];
+        if (!el) return false;
+        const frame = f.parentElement.getBoundingClientRect(), box = el.getBoundingClientRect();
+        return box.left >= frame.left && box.right <= frame.right;
+      }, target, { timeout: 5000 });
       const style = await graph.evaluate((f) => {
         const v = f.shadowRoot.querySelector('.vp');
         return { bg: getComputedStyle(v).backgroundColor, image: getComputedStyle(v).backgroundImage, tab: v.tabIndex, role: v.getAttribute('role'), chrome: [...f.shadowRoot.querySelectorAll('.ui,.ring,.chev,.nudge,.marquee')].every((n) => getComputedStyle(n).display === 'none') };
@@ -133,7 +140,7 @@ try {
         f.setDoc({ nodes, edges: nodes.slice(1).map((n, i) => ({ id: `edge${i}`, from: nodes[i].id, to: n.id })), groups: [], settings: { orientation: 'lr' } });
         f.select(['step9']); window.nestedScrollBefore = scrollY; f.showSelection();
       });
-      await page.waitForTimeout(550);
+      await parentRevealRendered('step9');
       const nestedReveal = await graph.evaluate((f) => { const wrapper = f.parentElement, frame = wrapper.getBoundingClientRect(), node = f.shadowRoot.querySelector('[data-id="step9"]').getBoundingClientRect(); return { scroll: wrapper.scrollLeft, inside: node.left >= frame.left && node.right <= frame.right, page: scrollY }; });
       assert.equal(nestedReveal.inside, true, `selected instruction is revealed in parent scroller (${JSON.stringify(nestedReveal)})`);
       assert.ok(nestedReveal.scroll > 0); assert.equal(nestedReveal.page, await page.evaluate(() => window.nestedScrollBefore), 'horizontal guide reveal leaves page scroll unchanged');
@@ -143,7 +150,7 @@ try {
         f.setDoc({ nodes, edges: nodes.slice(1).map((n, i) => ({ id: `new-edge${i}`, from: nodes[i].id, to: n.id })), groups: [], settings: { orientation: 'lr' } });
         f.select(['new-edge8']); f.showSelection();
       });
-      await page.waitForTimeout(550);
+      await parentRevealRendered(8);
       const newEdgeReveal = await graph.evaluate((f) => { const frame = f.parentElement.getBoundingClientRect(), path = f.shadowRoot.querySelectorAll('.edge')[8].getBoundingClientRect(); return { inside: path.left >= frame.left && path.right <= frame.right, scroll: f.parentElement.scrollLeft }; });
       assert.equal(newEdgeReveal.inside, true, `new selected edge also reveals after pending layout (${JSON.stringify(newEdgeReveal)})`);
       await graph.evaluate((f) => { const wrapper = f.parentElement; wrapper.before(f); wrapper.remove(); f.style.width = ''; });

@@ -130,8 +130,10 @@ svg.layer { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overfl
   cursor: pointer; transform-origin: 50% 50%;
 }
 .node:hover { border-color: color-mix(in srgb, var(--lf-accent) 45%, var(--lf-node-border)); }
-.node.action:focus-visible { outline: 2px solid var(--lf-focus); outline-offset: 4px; }
-.node.action { touch-action: manipulation; text-align: inherit; appearance: none; }
+.node.action:focus-visible, .group-action:focus-visible { outline: 2px solid var(--lf-focus); outline-offset: 4px; }
+.node.action, .group-action { touch-action: manipulation; text-align: inherit; appearance: none; }
+.node.action:disabled { cursor: default; border-color: var(--lf-node-border); }
+.node.action:disabled .t { opacity: .5; }
 .node.sel { border-color: var(--lf-accent); }
 /* Paint rings separately: a consumer's shadow value of "none" is valid on its own,
    but would invalidate a comma-separated shadow list containing the selection ring. */
@@ -185,6 +187,7 @@ textarea.ed::placeholder { color: var(--lf-muted); font-style: italic; }
 .glabel .gt:empty::before { content: attr(data-ph); color: var(--lf-muted); font-style: italic; font-weight: 500; }
 .glabel.sel .gt { color: var(--lf-accent); }
 .glabel textarea.ed { font: inherit; }
+.glabel.group-action { background: transparent; border: 0; }
 .chev {
   flex: none; width: 20px; height: 20px; display: inline-grid; place-items: center; padding: 0; margin: -1px 0 0 -2px;
   border: 0; border-radius: 5px; background: transparent; color: inherit; cursor: pointer;
@@ -196,6 +199,17 @@ textarea.ed::placeholder { color: var(--lf-muted); font-style: italic; }
   font: 500 14px/1.5 var(--lf-ui-font); color: var(--lf-muted); text-align: center; padding: 24px;
 }
 .empty[hidden] { display: none; }
+.kickstarter {
+  position: absolute; left: 0; top: 0; width: max-content; max-width: calc(100% - 32px); pointer-events: none;
+  font: 500 14px/1.5 var(--lf-ui-font); color: var(--lf-muted); text-align: center;
+  transition: opacity 380ms, visibility 0s;
+}
+.kickstarter .or { margin-top: 18px; }
+.kickstarter .or[hidden] { display: none; }
+.kickstarter.off { opacity: 0; visibility: hidden; transition: opacity 380ms, visibility 0s 380ms; }
+.kickstarter[hidden] { display: none; }
+.help-extra { display: block; }
+.help-extra[hidden] { display: none; }
 .ui kbd {
   font: 500 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--lf-muted);
   border: 1px solid var(--lf-ui-border); border-bottom-width: 2px; border-radius: 4px; padding: 2px 4px; background: transparent;
@@ -323,15 +337,16 @@ textarea.ed::placeholder { color: var(--lf-muted); font-style: italic; }
 :host([presentation="graph"]) { min-height: 0; }
 :host([presentation="graph"]) .vp { background: transparent; touch-action: pan-x pan-y; }
 :host([presentation="graph"]) .ui,
+:host([presentation="graph"]) .kickstarter,
 :host([presentation="graph"]) .ring,
 :host([presentation="graph"]) .chev,
 :host([presentation="graph"]) .nudge,
 :host([presentation="graph"]) .marquee { display: none !important; }
-:host([presentation="graph"]) .node:not(.action),
+:host([presentation="graph"]) .node:not(.action):not(.group-action),
 :host([presentation="graph"]) .gbox,
 :host([presentation="graph"]) .carrier { cursor: default; }
-:host([presentation="graph"]) .node:not(.action):hover { border-color: var(--lf-node-border); }
-:host([presentation="graph"]) .node:not(.action).sel:hover { border-color: var(--lf-accent); }
+:host([presentation="graph"]) .node:not(.action):not(.group-action):hover { border-color: var(--lf-node-border); }
+:host([presentation="graph"]) .node:not(.action):not(.group-action).sel:hover { border-color: var(--lf-accent); }
 :host([presentation="graph"]) .gbox:hover { stroke-width: 1.25; }
-@media (prefers-reduced-motion: reduce) { .sw .track, .sw .track::after { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .sw .track, .sw .track::after, .kickstarter, .kickstarter.off { transition: none; } }
 `;

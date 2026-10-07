@@ -40,7 +40,7 @@ jobs:
         run: node scripts/build-site.mjs
       - name: Tutorial tests
         working-directory: web
-        run: node test/tutorial.mjs
+        run: node test/tutorial-unit.mjs && node test/tutorial.mjs
       - name: Setup Pages
         if: github.event_name != 'pull_request'
         uses: actions/configure-pages@v5

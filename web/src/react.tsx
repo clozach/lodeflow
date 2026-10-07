@@ -1,6 +1,6 @@
 // React wrapper: typed props and callbacks over the <lode-flow> custom element.
-import { createElement, forwardRef, useEffect, useImperativeHandle, useRef, type CSSProperties } from 'react';
-import type { LodeFlowActivation, LodeFlowElement, LodeFlowLayoutInfo } from './lode-flow';
+import { createElement, forwardRef, useEffect, useImperativeHandle, useRef, type CSSProperties, type ReactNode } from 'react';
+import type { LodeFlowActivation, LodeFlowGroupActivation, LodeFlowElement, LodeFlowLayoutInfo } from './lode-flow';
 import type { Bias, Compactness, FlowDoc, Orientation } from './model';
 
 export interface LodeFlowProps {
@@ -22,6 +22,12 @@ export interface LodeFlowProps {
   presentation?: 'editor' | 'graph';
   /** 'event': nodes activate the host callback on click, Enter or Space instead of editing. */
   nodeActivation?: 'edit' | 'event';
+  /** Graph group labels/proxies activate the host instead of editing or folding themselves. */
+  groupActivation?: 'event';
+  /** Host availability metadata; separate from the diagram and its history. */
+  disabledNodeIds?: readonly string[];
+  /** Show the first-node prompt while an editable diagram has no nodes. */
+  emptyHint?: boolean;
   /** Keep content and undo history in localStorage under this key. */
   storageKey?: string;
   /** Built-in appearance; omitted follows the page's light/dark preference. */
@@ -34,12 +40,14 @@ export interface LodeFlowProps {
   wheel?: 'auto' | 'always' | 'modifier';
   className?: string;
   style?: CSSProperties;
+  children?: ReactNode;
   onChange?: (doc: FlowDoc, label: string) => void;
   onSelectionChange?: (ids: string[]) => void;
   onLayout?: (info: LodeFlowLayoutInfo) => void;
   onHistory?: (h: { canUndo: boolean; canRedo: boolean; undoLabel: string | null; redoLabel: string | null }) => void;
   onLimit?: (detail: { maxItems: number; itemCount: number; attemptedCount: number; message: string }) => void;
   onActivate?: (detail: LodeFlowActivation) => void;
+  onGroupActivate?: (detail: LodeFlowGroupActivation) => void;
 }
 
 export const LodeFlow = forwardRef<LodeFlowElement | null, LodeFlowProps>(function LodeFlow(props, ref) {
@@ -54,6 +62,10 @@ export const LodeFlow = forwardRef<LodeFlowElement | null, LodeFlowProps>(functi
   useEffect(() => {
     if (el.current && props.doc && el.current.doc !== props.doc) el.current.doc = props.doc;
   }, [props.doc]);
+
+  useEffect(() => {
+    if (el.current) el.current.disabledNodeIds = props.disabledNodeIds ?? [];
+  }, [props.disabledNodeIds]);
 
   const handlers = useRef(props);
   handlers.current = props;
@@ -72,6 +84,7 @@ export const LodeFlow = forwardRef<LodeFlowElement | null, LodeFlowProps>(functi
       on('lode-history', (d) => handlers.current.onHistory?.(d)),
       on('lode-limit', (d) => handlers.current.onLimit?.(d)),
       on('lode-activate', (d) => handlers.current.onActivate?.(d)),
+      on('lode-group-activate', (d) => handlers.current.onGroupActivate?.(d)),
     ];
     return () => offs.forEach((f) => f());
   }, []);
@@ -88,12 +101,14 @@ export const LodeFlow = forwardRef<LodeFlowElement | null, LodeFlowProps>(functi
   if (props.readOnly) attrs.readonly = '';
   if (props.presentation) attrs.presentation = props.presentation;
   if (props.nodeActivation) attrs['node-activation'] = props.nodeActivation;
+  if (props.groupActivation) attrs['group-activation'] = props.groupActivation;
+  if (props.emptyHint) attrs['empty-hint'] = '';
   if (props.storageKey) attrs['storage-key'] = props.storageKey;
   if (props.theme) attrs.theme = props.theme;
   if (props.maxItems !== undefined) attrs['max-items'] = String(props.maxItems);
   if (props.src) attrs.src = props.src;
   if (props.wheel) attrs.wheel = props.wheel;
-  return createElement('lode-flow', attrs);
+  return createElement('lode-flow', attrs, props.children);
 });
 
 declare module 'react' {

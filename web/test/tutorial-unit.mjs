@@ -1,0 +1,55 @@
+import assert from 'node:assert/strict';
+import { example, countItems, guideDocument, observe, recover, seed, steps, progressKey } from '../../site/tutorial.mjs';
+import { readProgress, writeProgress } from '../../site/persistence.mjs';
+const copy = (value) => structuredClone(value);
+let doc = copy(seed);
+const expected = { rename: 1, linked: 3, free: 4, link: 5, label: 5, insert: 7, group: 8, collapse: 8, expand: 8, dive: 8 };
+for (const id of Object.keys(expected)) {
+  const input = doc, before = copy(doc);
+  doc = example(doc, id);
+  assert.equal(countItems(doc), expected[id], `${id} changes only the required items`);
+  if (['label', 'group', 'collapse', 'expand', 'dive'].includes(id)) assert.deepEqual(doc.nodes.map((node) => node.id), before.nodes.map((node) => node.id), `${id} adds no stray nodes`);
+  if (id === 'label') { assert.deepEqual(doc.nodes, before.nodes); assert.deepEqual(doc.groups, before.groups); }
+  if (['collapse', 'expand', 'dive'].includes(id)) { assert.deepEqual(doc.nodes, before.nodes); assert.deepEqual(doc.edges, before.edges); }
+  assert.deepEqual(input, before, 'example leaves its input unchanged');
+}
+const occupied = copy(seed); occupied.junctions.push({ id: 'example-node-1' });
+assert.equal(example(occupied, 'rename').nodes[0].id, 'example-node-2', 'junction IDs participate in global allocation');
+const replay = example(example(doc, 'label'), 'collapse');
+assert.equal(countItems(replay), 8, 'completed examples do not accumulate prerequisites');
+const guide = guideDocument(4, 2);
+assert.equal(guide.groups[0].collapsed, true);
+assert.equal(guide.nodes.length, 8);
+assert.equal(guide.nodes[0].group, 'level-0');
+assert.ok(guide.nodes[4].text.startsWith('→'));
+assert.ok(guide.nodes[5].text.startsWith('🔒'));
+assert.match(guideDocument(9, 3, new Set(), true).nodes[9].text, /tap Dive/i);
+assert.doesNotMatch(guideDocument(10, 3, new Set(), true).nodes[10].text, /Ctrl|⌘|Enter|Shift/);
+const state = (before, after, kind, index = 1) => ({ doc: after, view: { sel: [] }, history: { v: 2, index, docs: [before, after], entries: [{ t: 1, kind, label: kind, before: { doc: 0, view: { sel: [] } }, after: { doc: 1, view: { sel: [] } } }] } });
+const first = example(seed, 'rename');
+const created = state(seed, first, 'add');
+assert.equal(observe(-1, state(seed, seed, 'add', 0), created), 0, 'first node reveals instructions');
+assert.equal(observe(0, created, created), 0, 'typing a new node is not a separate rename');
+const renamed = copy(first); renamed.nodes[0].text = 'New words';
+const edited = state(first, renamed, 'edit');
+assert.equal(observe(0, created, edited), 1);
+assert.equal(recover(edited), 0, 'one historical entry does not claim an unobserved prior lesson');
+const undone = { ...edited, doc: first, history: { ...edited.history, index: 0 } };
+assert.equal(observe(10, edited, undone), 11);
+assert.equal(observe(11, undone, edited), 12);
+const values = new Map(), storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
+values.set('demo', JSON.stringify({ rev: 10, doc: first, view: { sel: [] } }));
+values.set('demo:history', JSON.stringify({ rev: 10, history: created.history }));
+assert.equal(writeProgress(storage, 'demo', edited, 1), false, 'progress cannot outrun a debounced document');
+assert.equal(values.has(progressKey), false);
+values.set('demo', JSON.stringify({ rev: 11, doc: renamed, view: { sel: [] } }));
+values.set('demo:history', JSON.stringify({ rev: 10, history: edited.history }));
+assert.equal(writeProgress(storage, 'demo', edited, 1), false, 'stale undo history cannot certify a newer save');
+values.set('demo:history', JSON.stringify({ rev: 11, history: edited.history }));
+const checkpoints = [{ key: '10:load:Load', before: 4, after: -1 }];
+assert.equal(writeProgress(storage, 'demo', edited, 1, checkpoints), true);
+assert.deepEqual(readProgress(storage, 11), { reached: 1, checkpoints });
+assert.equal(readProgress(storage, 10), null, 'a mismatched practice revision cannot load accomplishments');
+values.set(progressKey, JSON.stringify({ v: 1, reached: 12 }));
+assert.equal(readProgress(storage, undefined), null, 'an absent practice save cannot load unbound accomplishments');
+console.log('✓ tutorial examples, gating, native observation and revision-bound progress');

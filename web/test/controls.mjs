@@ -78,6 +78,7 @@ try {
           const t = await toolbar(page); assertBookends(t); assertCentered(t);
           assert.equal(t.emptyHidden, true); assert.equal(t.emptyText, ''); assert.equal(t.wayback, false);
           assert.deepEqual(t.buttons.map((b) => b.act), ['addnode', 'help']);
+          assert.equal(t.buttons[0].text.includes('⇧'), false, 'Shift+N is omitted until nodes exist');
         }
         await reset(page);
         const t = await toolbar(page); assertBookends(t);
@@ -87,6 +88,98 @@ try {
         await page.locator('.puck [data-act="help"]').click(); await settled(page);
         assert.ok(await page.locator('.help tr').count() >= 30, 'full desktop legend');
         assert.match(await page.locator('.help').textContent(), /N \/ ⇧N/);
+      });
+
+      await check(`${name}: opt-in first-node hint fades and returns on empty`, async () => {
+        await reset(page, empty);
+        assert.equal(await page.locator('.kickstarter').isVisible(), false, 'default empty canvas has no prompt');
+        await flow(page, (f) => f.setAttribute('empty-hint', ''));
+        await page.waitForTimeout(450);
+        const hint = await page.locator('.kickstarter').evaluate((n) => ({ lines: [...n.children].map((c) => c.textContent), rect: n.getBoundingClientRect().toJSON(), opacity: getComputedStyle(n).opacity }));
+        assert.deepEqual(hint.lines, ['Double-click anywhere', 'to add the first node', 'or']);
+        const t = await toolbar(page); assertCentered(t);
+        assert.ok(hint.rect.bottom < t.puck.y, 'three intact text lines sit above the centered palette');
+        assert.ok(Math.abs(hint.rect.x + hint.rect.width / 2 - (t.frame.x + t.frame.w / 2)) < 2);
+        await page.locator('.puck [data-act="addnode"]').click();
+        await page.waitForTimeout(100);
+        const during = await page.locator('.kickstarter').evaluate((n) => Number(getComputedStyle(n).opacity));
+        assert.ok(during > 0 && during < 1, 'first-node prompt fades rather than vanishing');
+        await page.locator('textarea').fill('A first node'); await page.keyboard.press('Escape');
+        await page.waitForTimeout(450);
+        assert.equal(await page.locator('.kickstarter').isVisible(), false);
+        assert.match((await toolbar(page)).buttons[0].text, /⇧N/);
+        await reset(page, empty); await page.waitForTimeout(450);
+        assert.equal(await page.locator('.kickstarter').isVisible(), true);
+        await flow(page, (f) => f.setAttribute('readonly', '')); await settled(page);
+        assert.equal(await page.locator('.kickstarter').isVisible(), false, 'read-only cannot promise adding');
+        await flow(page, (f) => { f.removeAttribute('readonly'); f.setAttribute('presentation', 'graph'); }); await settled(page);
+        assert.equal(await page.locator('.kickstarter').isVisible(), false, 'graph presentation remains a bare graph');
+        await flow(page, (f) => { f.removeAttribute('presentation'); f.removeAttribute('empty-hint'); });
+      });
+
+      await check(`${name}: Help slot retains host controls and their keyboard ownership`, async () => {
+        await reset(page);
+        await flow(page, (f) => {
+          const button = document.createElement('button'); button.slot = 'help'; button.textContent = 'Host style';
+          window.hostHelpButton = button; window.hostHelpClicks = 0;
+          button.addEventListener('click', () => window.hostHelpClicks++); f.append(button);
+        });
+        assert.equal(await page.getByRole('button', { name: 'Host style' }).isVisible(), false);
+        for (let i = 0; i < 2; i++) {
+          await page.locator('.puck [data-act="help"]').click(); await settled(page);
+          assert.equal(await page.getByRole('button', { name: 'Host style' }).isVisible(), true);
+          await page.getByRole('button', { name: 'Host style' }).click();
+          assert.equal(await page.locator('.help').isVisible(), true, 'slotted pointer controls are inside Help');
+          await page.getByRole('button', { name: 'Host style' }).focus(); await page.keyboard.press('Enter');
+          assert.equal(await flow(page, (f) => !!f.shadowRoot.querySelector('textarea')), false, 'host Enter never reaches canvas edit');
+          assert.equal(await flow(page, (f) => f.querySelector('[slot="help"]') === window.hostHelpButton), true);
+          await page.keyboard.press('Escape'); await settled(page);
+          assert.equal(await page.locator('.help').isVisible(), false);
+        }
+        assert.equal(await page.evaluate(() => window.hostHelpClicks), 4);
+        await flow(page, (f) => f.querySelector('[slot="help"]').remove());
+        await page.locator('.puck [data-act="help"]').click(); await settled(page);
+        assert.equal(await flow(page, (f) => f.shadowRoot.querySelector('slot[name="help"]').hidden), true, 'default footer has no empty footprint');
+      });
+
+      await check(`${name}: graph configuration preserves foreign focus and Help closes deliberately`, async () => {
+        await reset(page, empty);
+        await page.evaluate(() => {
+          const practice = document.querySelector('lode-flow'); practice.id = 'focus-practice'; practice.focus();
+          const guide = document.createElement('lode-flow'); guide.id = 'focus-guide'; practice.before(guide);
+          guide.setAttribute('readonly', ''); guide.setAttribute('presentation', 'graph'); guide.setAttribute('node-activation', 'event'); guide.setAttribute('group-activation', 'event');
+        });
+        try {
+          await settled(page);
+          assert.equal(await page.evaluate(() => document.activeElement.id), 'focus-practice', 'graph initialization never steals keys from its editable neighbor');
+          await page.keyboard.press('n'); await settled(page);
+          assert.equal(await page.locator('#focus-practice textarea').count(), 1);
+          assert.equal(await page.locator('#focus-guide textarea').count(), 0);
+          await page.locator('#focus-practice textarea').fill('Keyboard reaches practice'); await page.keyboard.press('Escape');
+        } finally { await page.locator('#focus-guide').evaluate((n) => n.remove()); }
+        await reset(page);
+        await page.evaluate(() => { const input = document.createElement('input'); input.id = 'focus-owner'; document.body.append(input); input.focus(); });
+        for (const [name, value] of [['presentation', 'graph'], ['node-activation', 'event'], ['group-activation', 'event'], ['readonly', '']]) {
+          await flow(page, (f, { name, value }) => f.setAttribute(name, value), { name, value }); await settled(page);
+          assert.equal(await page.evaluate(() => document.activeElement.id), 'focus-owner', `${name} update leaves outside focus alone`);
+        }
+        await flow(page, (f) => { for (const name of ['presentation', 'node-activation', 'group-activation', 'readonly']) f.removeAttribute(name); });
+        await page.locator('.puck [data-act="help"]').click(); await settled(page);
+        await page.locator('#focus-owner').click(); await settled(page);
+        assert.equal(await page.locator('.help').isVisible(), false);
+        assert.equal(await page.evaluate(() => document.activeElement.id), 'focus-owner', 'closing Help from an outside pointer does not reclaim focus');
+        await page.locator('.puck [data-act="help"]').click(); await settled(page);
+        await page.locator('#focus-owner').focus();
+        await flow(page, (f) => f.setAttribute('presentation', 'graph')); await settled(page);
+        assert.equal(await page.locator('.help').isVisible(), false);
+        assert.equal(await page.evaluate(() => document.activeElement.id), 'focus-owner', 'mode change closes even open Help without claiming outside focus');
+        await flow(page, (f) => f.removeAttribute('presentation')); await settled(page);
+        for (const close of ['button', 'Escape']) {
+          await page.locator('.puck [data-act="help"]').click(); await settled(page);
+          if (close === 'button') await page.locator('[data-act="close-help"]').click(); else await page.keyboard.press('Escape');
+          assert.equal(await flow(page, (f) => f.shadowRoot.activeElement?.classList.contains('vp')), true, 'an explicit Help close returns keys to its diagram');
+        }
+        await page.locator('#focus-owner').evaluate((n) => n.remove());
       });
 
       await check(`${name}: click and N/Shift+N agree in every selection`, async () => {
@@ -214,9 +307,17 @@ try {
             assert.equal(await flow(touch, (f) => f.doc.groups.find((g) => g.id === 'g').collapsed), true, 'first chevron tap still folds the group');
             await assertGroupCaptions(touch, true);
             await reset(touch, empty); assertBookends(await toolbar(touch)); assertCentered(await toolbar(touch));
+            await flow(touch, (f) => f.setAttribute('empty-hint', '')); await page.waitForTimeout(450);
+            assert.equal(await touch.locator('.kickstarter > div').first().textContent(), 'Tap Add node');
+            assert.equal(await touch.locator('.kickstarter .or').isVisible(), false, 'touch prompt names its working control without redundant or');
+            const beforeTap = await flow(touch, (f) => f.doc.nodes.length);
+            await touch.locator('.puck [data-act="addnode"]').tap(); await settled(touch);
+            assert.equal(await flow(touch, (f) => f.doc.nodes.length), beforeTap + 1, 'advertised Add tap creates first node');
+            await flow(touch, (f) => { f.removeAttribute('empty-hint'); f.finishEdit('discard'); }); await reset(touch, empty);
             await touch.locator('.puck [data-act="help"]').tap(); await settled(touch);
             assert.equal(await touch.locator('.help h2 span').textContent(), 'Gestures');
-            assert.equal(await touch.locator('.help tr').count(), 13);
+            assert.equal(await touch.locator('.help tr').count(), 12);
+            assert.doesNotMatch(await touch.locator('.help').textContent(), /Double-tap/);
             assert.doesNotMatch(await touch.locator('.help').textContent(), /Esc|Ctrl|⌘|⇧|↵|Press \[|press [A-Z]|keyboard|Keys/);
             assert.deepEqual(await visibleHints(touch), []);
             await touch.locator('[data-act="close-help"]').tap();

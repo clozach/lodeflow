@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 
 const entry = fileURLToPath(new URL('../src/geometry.ts', import.meta.url));
 const out = await build({ entryPoints: [entry], bundle: true, write: false, format: 'esm', platform: 'node', logLevel: 'error' });
-const { edgePanVelocity: v, edgePanStop: stop } = await import('data:text/javascript;base64,' + Buffer.from(out.outputFiles[0].text).toString('base64'));
+const { edgePanVelocity: v, edgePanStop: stop, snapRotation } = await import('data:text/javascript;base64,' + Buffer.from(out.outputFiles[0].text).toString('base64'));
 
 const W = 1000, H = 600, B = 48, MAX = 900;
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg}: ${a} vs ${b}`);
@@ -50,4 +50,7 @@ check(() => near(stop({ x: 0, y: 600 }, box(0, 0, 400, H - M + 50), W, H, M).y, 
 check(() => near(stop({ x: 0, y: -600 }, box(0, M + 5, 400, 300), W, H, M).y, 0, 'upward: top already in view'));
 check(() => assert.deepEqual(stop({ x: 0, y: 0 }, box(-900, -900, 3000, 3000), W, H, M), { x: 0, y: 0 }, 'no speed stays none'));
 
-console.log(`✓ geometry: ${checks} edge-pan checks`);
+for (const turn of [-720, -360, 0, 360, 720]) for (const offset of [-3, -2.9, 0, 2.9, 3]) check(() => assert.equal(snapRotation((turn + offset) * Math.PI / 180), 0, 'upright boundary'));
+for (const angle of [-180, -3.001, 3.001, 90, 356.999, 363.001]) check(() => near(snapRotation(angle * Math.PI / 180), angle * Math.PI / 180, 'outside snap zone'));
+
+console.log(`✓ geometry: ${checks} edge-pan and rotation checks`);

@@ -46,6 +46,12 @@ export function panBy(c: Camera, dx: number, dy: number): Camera {
   return { ...c, x: c.x - wx, y: c.y - wy };
 }
 
+/** Snap within three degrees of upright, including either side of a complete turn. */
+export function snapRotation(r: number): number {
+  const distance = Math.abs(Math.atan2(Math.sin(r), Math.cos(r)));
+  return distance <= Math.PI / 60 + 1e-12 ? 0 : r;
+}
+
 /**
  * Edge pan: how fast (screen px per second) a drag held near the frame's edge moves the view
  * toward that edge. Zero outside the `band` along each edge; inside it the speed eases in with

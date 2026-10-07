@@ -26,6 +26,7 @@ import {
   sample,
   screenBox,
   sectorData,
+  snapRotation,
   toScreen,
   toWorld,
   type Pt,
@@ -395,6 +396,8 @@ export class LodeFlowElement extends Base {
 
   // ----- gestures -----
   private pointers = new Map<number, Pt>();
+  /** Keep unsnapped wheel intent so small ticks can leave the upright snap zone. */
+  private wheelRotation: { angle: number; applied: Camera; at: number } | null = null;
   private gesture:
     | null
     | {
@@ -3210,6 +3213,7 @@ export class LodeFlowElement extends Base {
   }
 
   private rotateTo(r: number, at?: Pt, coalesce = 0) {
+    r = snapRotation(r);
     const s = at ?? { x: this.vw / 2, y: this.vh / 2 };
     const w = toWorld(this.view.cam, this.vw, this.vh, s);
     const deg = Math.round((((r * 180) / Math.PI) % 360 + 360) % 360);
@@ -3501,6 +3505,7 @@ export class LodeFlowElement extends Base {
 
   private onPointerDown(e: PointerEvent) {
     if (this.graphPresentation) return;
+    this.wheelRotation = null;
     const p = this.local(e);
     this.lastPointer = p;
     if ((e.target as Element).closest?.('textarea')) return;
@@ -3604,7 +3609,7 @@ export class LodeFlowElement extends Base {
       while (dAng < -Math.PI) dAng += 2 * Math.PI;
       if (!pc.rotating && Math.abs(dAng) > (14 * Math.PI) / 180) pc.rotating = true;
       if (Math.abs(z / pc.cam0.z - 1) > 0.03) pc.zoomed = true;
-      const r = pc.rotating ? pc.cam0.r + dAng : pc.cam0.r;
+      const r = pc.rotating ? snapRotation(pc.cam0.r + dAng) : pc.cam0.r;
       this.view = { ...this.view, cam: pin(pc.cam0, this.vw, this.vh, pc.world0, mid, z, r), follow: false };
       this.camShown = { ...this.view.cam };
       this.camFrom = null;
@@ -3807,12 +3812,18 @@ export class LodeFlowElement extends Base {
       dy *= this.vh;
     }
     if (zoomIntent) {
+      this.wheelRotation = null;
       const z = this.view.cam.z * Math.exp(-dy * 0.0022 * this.tun.wheelZoom);
       this.zoomTo(z, p, 500);
     } else if (rotateIntent) {
       const d = Math.abs(dy) > Math.abs(dx) ? dy : dx;
-      this.rotateTo(this.view.cam.r + d * 0.003, p, 500);
+      const t = now(), previous = this.wheelRotation;
+      const continuing = previous && t - previous.at <= 500 && previous.applied === this.view.cam;
+      const angle = (continuing ? previous.angle : this.view.cam.r) + d * 0.003;
+      this.rotateTo(angle, p, 500);
+      this.wheelRotation = { angle, applied: this.view.cam, at: t };
     } else {
+      this.wheelRotation = null;
       this.panScreen(-dx, -dy, 500);
       this.camShown = { ...this.view.cam };
       this.camFrom = null;

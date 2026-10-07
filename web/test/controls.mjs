@@ -221,10 +221,14 @@ try {
               await page.locator('#popup-scroller').evaluate(p => p.style.height = '180px'); await fits();
               await page.locator('#popup-scroller').evaluate(p => p.style.height = '220px'); await fits();
             }
-            const r = await pane.boundingBox(); await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2); await page.mouse.wheel(0, 5000); await settled(page);
+            const r = await pane.boundingBox(), point = {x: r.x + r.width / 2, y: r.y + r.height / 2};
+            await page.mouse.move(point.x, point.y);
+            assert.equal(await pane.evaluate((el, point) => el.contains(el.getRootNode().elementFromPoint(point.x, point.y)), point), true, `${kind} receives the wheel at its visible center`);
+            if (kind === 'help') assert.ok(await pane.evaluate(el => el.scrollHeight > el.clientHeight), 'bounded Help has content to scroll');
+            await page.mouse.wheel(0, 5000);
             if (kind === 'help') {
-              assert.ok(await pane.evaluate(el => el.scrollTop > 0), 'Help scrolls within its bounded pane');
-            }
+              await page.waitForFunction(() => document.querySelector('lode-flow').shadowRoot.querySelector('.help').scrollTop > 0, null, {timeout: 5000});
+            } else await settled(page);
             for (const control of await pane.locator('button:visible,input:visible').all()) {
               if (await control.isDisabled()) continue;
               await control.scrollIntoViewIfNeeded(); await fits();

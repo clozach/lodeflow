@@ -190,6 +190,7 @@ try {
 
       await check(`${name}: Layout Help and lists fit the visible window and parent clip`, async () => {
         await page.emulateMedia({reducedMotion: 'reduce'});
+        try {
         for (const parentClip of [false, true]) {
           await page.setViewportSize({width: 393, height: 560});
           await reset(page);
@@ -201,6 +202,7 @@ try {
             }
           }, parentClip);
           for (const kind of ['panel', 'help', 'linker', 'adder']) {
+            await page.mouse.move(1, 1); // Leave the previous pane before its API-driven replacement.
             await flow(page, (f, kind) => {
               f.closePanel(); f.closeHelp(); f.closeLinker();
               if (kind === 'panel') f.openPanel('puck');
@@ -212,7 +214,9 @@ try {
             const pane = page.locator(selector);
             const fits = async () => page.waitForFunction((selector) => {
               const f = document.querySelector('lode-flow'), el = f.shadowRoot.querySelector(selector), r = el.getBoundingClientRect(), p = document.querySelector('#popup-scroller')?.getBoundingClientRect();
-              return r.top >= Math.max(0, p?.top ?? 0) + 7 && r.bottom <= Math.min(innerHeight, p?.bottom ?? innerHeight) - 7 && r.left >= 7 && r.right <= innerWidth - 7;
+              const vp = f.shadowRoot.querySelector('.vp').getBoundingClientRect();
+              const availableHeight = Math.min(vp.bottom, innerHeight, p?.bottom ?? innerHeight) - Math.max(vp.top, 0, p?.top ?? 0) - 16;
+              return Math.abs(parseFloat(el.style.maxHeight) - Math.max(0, availableHeight)) < 0.5 && r.top >= Math.max(0, p?.top ?? 0) + 7 && r.bottom <= Math.min(innerHeight, p?.bottom ?? innerHeight) - 7 && r.left >= 7 && r.right <= innerWidth - 7;
             }, selector, {timeout: 3000});
             await fits();
             if (kind === 'panel') { await pane.locator('[data-act="exhaustive"]').click(); await fits(); }
@@ -237,8 +241,11 @@ try {
           }
           await flow(page, f => { f.closePanel(); f.closeHelp(); f.closeLinker(); const p = f.parentElement; if (p.id === 'popup-scroller') {p.before(f);p.remove();} f.style.height = '100vh'; f.style.marginTop = '0'; });
         }
+        } finally {
+          await flow(page, f => { f.closePanel(); f.closeHelp(); f.closeLinker(); const p = f.parentElement; if (p.id === 'popup-scroller') {p.before(f);p.remove();} f.style.height = '100vh'; f.style.marginTop = '0'; });
         await page.setViewportSize({width: 1280, height: 800});
         await page.emulateMedia({reducedMotion: 'no-preference'});
+        }
       });
 
       await check(`${name}: opt-in first-node hint fades and returns on empty`, async () => {

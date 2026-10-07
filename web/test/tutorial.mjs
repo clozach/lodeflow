@@ -207,6 +207,27 @@ try {
         assert.equal((await docOf(page)).nodes[0].text, 'Unfinished draft');
       });
 
+      await scenario(browser, `${name}: top-edge draft survives the tutorial resize and stays writable`, async page => {
+        await page.goto(url); await ready(page);
+        await help(page); await page.locator('#appearance').selectOption('blueprint'); await page.locator('#flow [data-act="close-help"]').click();
+        const viewport = await page.locator('#flow .vp').boundingBox();
+        await page.mouse.dblclick(viewport.x + viewport.width / 2, viewport.y + 12);
+        await current(page, 'rename');
+        await page.waitForTimeout(300); // Let the instruction graph resize the practice frame.
+        const reachable = () => page.waitForFunction(() => {
+          const root = document.querySelector('#flow').shadowRoot, ta = root.querySelector('textarea.ed');
+          if (!ta) return false;
+          const r = ta.getBoundingClientRect(), v = root.querySelector('.vp').getBoundingClientRect(), p = root.querySelector('.puck').getBoundingClientRect();
+          const overlaps = r.left < p.right && r.right > p.left && r.top < p.bottom && r.bottom > p.top;
+          return r.top >= v.top && r.bottom <= v.bottom && r.left >= v.left && r.right <= v.right && !overlaps && root.activeElement === ta && root.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === ta;
+        }, null, {timeout:5000});
+        await reachable();
+        await page.setViewportSize({width:393,height:560}); await reachable();
+        await page.keyboard.type('My reachable idea'); await page.keyboard.press('Enter');
+        assert.equal((await docOf(page)).nodes[0].text, 'My reachable idea');
+        assert.equal(await page.locator('#flow textarea.ed').count(),0);
+      }, {reducedMotion:'reduce'});
+
       await scenario(browser, `${name}: page-wide appearance and notices leave phone controls reachable`, async (page, context) => {
         await page.goto(url); await ready(page); await start(page); await help(page, true);
         await page.locator('#appearance').selectOption('blueprint');

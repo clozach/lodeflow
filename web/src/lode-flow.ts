@@ -2232,7 +2232,40 @@ export class LodeFlowElement extends Base {
     this.drawLinkLine();
     this.world.classList.toggle('moving', busy || !!this.gesture);
     this.placeMagnets();
+    this.revealEditor();
     if (busy) this.schedule();
+  }
+
+  /** Keep the active editor reachable as layout, floating controls or its host frame change. */
+  private revealEditor() {
+    const ed = this.editing;
+    if (!ed || !this.vw || !this.vh) return;
+    const el = ed.ta.closest('.node, .glabel, .proxy, .carrier') as HTMLElement;
+    const r = el.getBoundingClientRect();
+    const vp = this.vp.getBoundingClientRect();
+    let left = Math.max(vp.left, 0) + 8, top = Math.max(vp.top, 0) + 8;
+    let right = Math.min(vp.right, window.innerWidth) - 8, bottom = Math.min(vp.bottom, window.innerHeight) - 8;
+    for (let parent = this.parentElement; parent; parent = parent.parentElement) {
+      const style = getComputedStyle(parent), box = parent.getBoundingClientRect();
+      if (/(auto|scroll|hidden|clip)/.test(style.overflowX)) { left = Math.max(left, box.left + 8); right = Math.min(right, box.right - 8); }
+      if (/(auto|scroll|hidden|clip)/.test(style.overflowY)) { top = Math.max(top, box.top + 8); bottom = Math.min(bottom, box.bottom - 8); }
+    }
+    if (right <= left || bottom <= top) return;
+    const w = Math.min(r.width, right - left), hgt = Math.min(r.height, bottom - top);
+    const puck = this.puck.getBoundingClientRect();
+    const fit = (x: number, y: number) => ({ x: clamp(x, left, right - w), y: clamp(y, top, bottom - hgt) });
+    const clear = (p: Pt) => p.x + w <= puck.left - 8 || p.x >= puck.right + 8 || p.y + hgt <= puck.top - 8 || p.y >= puck.bottom + 8;
+    const candidates = [fit(r.left, r.top), fit(r.left, puck.bottom + 8), fit(r.left, puck.top - hgt - 8), fit(puck.left - w - 8, r.top), fit(puck.right + 8, r.top)];
+    const options = candidates.filter(clear);
+    const target = (options.length ? options : candidates).reduce((a, b) => Math.hypot(a.x - r.left, a.y - r.top) <= Math.hypot(b.x - r.left, b.y - r.top) ? a : b);
+    const dx = target.x - r.left, dy = target.y - r.top;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
+    // Move the drawn and destination cameras together, preserving an in-flight layout animation.
+    this.view = { ...this.view, cam: panBy(this.view.cam, dx, dy), follow: false };
+    this.camShown = panBy(this.camShown, dx, dy);
+    if (this.camFrom) this.camFrom = panBy(this.camFrom, dx, dy);
+    this.redraw = true;
+    this.schedule();
   }
 
   // =====================================================================

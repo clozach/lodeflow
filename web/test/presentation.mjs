@@ -164,12 +164,16 @@ try {
         requestAnimationFrame(sample);
         f.setDoc({ ...f.doc, nodes: f.doc.nodes.map((n) => ['a', 'b'].includes(n.id) ? { ...n, group: 'level' } : n), groups: [{ id: 'level', text: 'Completed level' }] });
       });
-      await page.waitForTimeout(550);
+      await page.waitForFunction(() => window.groupOpacity.some((o) => o > 0 && o < .95) && window.groupOpacity.at(-1) === 1, null, { timeout: 5000 });
       const opacities = await page.evaluate(() => window.groupOpacity);
       assert.ok(opacities.some((o) => o > 0 && o < .95), `expanded group fades into existence (${opacities})`);
       assert.equal(opacities.at(-1), 1);
       await graph.evaluate((f) => f.setDoc({ ...f.doc, groups: f.doc.groups.map((g) => ({ ...g, collapsed: true })) }));
-      await page.waitForTimeout(450);
+      await page.waitForFunction(() => {
+        const root = document.getElementById('graph').shadowRoot;
+        const buttons = [...root.querySelectorAll('button[data-gid="level"]')];
+        return buttons.length === 2 && buttons.filter((b) => getComputedStyle(b).visibility !== 'hidden').length === 1 && Number(root.querySelector('.gbox[data-gid="level"]').style.opacity) === 0;
+      }, null, { timeout: 5000 });
       const level = graph.getByRole('button', { name: 'Completed level', exact: true });
       assert.equal(await level.count(), 1, 'only the visible group proxy is a native button');
       assert.equal(await graph.locator('button button').count(), 0, 'group actions never nest native buttons');
@@ -180,12 +184,13 @@ try {
       await graph.locator('[data-id="c"]').focus(); await page.keyboard.press('ArrowRight');
       assert.equal(await graph.evaluate((f) => f.shadowRoot.activeElement.dataset.gid), 'level', 'arrow navigation includes the visible group and skips its hidden nodes');
       await graph.evaluate((f) => { f.addEventListener('lode-group-activate', () => f.setDoc({ ...f.doc, groups: f.doc.groups.map((g) => ({ ...g, collapsed: !g.collapsed })) }), { once: true }); });
-      await page.keyboard.press('Enter'); await page.waitForTimeout(450);
+      await page.keyboard.press('Enter');
+      await page.waitForFunction(() => { const n = document.getElementById('graph').shadowRoot.querySelector('[data-id="a"]'); return n && getComputedStyle(n).display !== 'none' && getComputedStyle(n).visibility !== 'hidden' && Number(n.style.opacity) === 1 && n.getBoundingClientRect().width > 0; }, null, { timeout: 5000 });
       assert.equal(await graph.locator('[data-id="a"]').isVisible(), true, 'completed group reopens for replay');
       await page.emulateMedia({ reducedMotion: 'reduce' });
       await graph.evaluate((f, doc) => f.setDoc(doc), doc); await page.waitForTimeout(50);
       await graph.evaluate((f) => f.setDoc({ ...f.doc, nodes: f.doc.nodes.map((n) => ({ ...n, group: 'snap' })), groups: [{ id: 'snap', text: 'Reduced motion' }] }));
-      await page.waitForTimeout(50);
+      await page.waitForFunction(() => Number(document.getElementById('graph').shadowRoot.querySelector('.gbox[data-gid="snap"]')?.style.opacity) === 1, null, { timeout: 5000 });
       assert.equal(await graph.locator('.gbox[data-gid="snap"]').evaluate((n) => Number(n.style.opacity)), 1, 'reduced motion snaps the new group');
       await page.emulateMedia({ reducedMotion: 'no-preference' });
       assert.equal(await page.locator('#passive').getByRole('button').count(), 0);

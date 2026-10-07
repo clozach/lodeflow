@@ -201,8 +201,8 @@ interface EdgeEls {
 /** What a pointer is over, for clicks and for dropping a link. */
 type Hit = { type: 'node' | 'group' | 'chev' | 'edge' | 'empty'; id: string | null };
 /**
- * The link list. `out` (E): pick a node or an edge to link the source node to. `in` (⇧E, the
- * reverse link): pick a node to link into the source node. `new` (⇧N, or ⇧-click on Add node, with
+ * The link list. `out` (E): pick destinations for the source node or edge. `in` (⇧E, the
+ * reverse link): pick nodes or edges that lead into the selection. Edge sources offer nodes. `new` (⇧N, or ⇧-click on Add node, with
  * nothing selected; `source` is empty): pick nodes for a new node to link before (↵) or after (⇧↵).
  * ⌘-click / ⌘↵ checks a row, ⇧-click checks every row between it and the last one checked; a pick
  * acts on the checked rows and the picked one together.
@@ -1674,7 +1674,7 @@ export class LodeFlowElement extends Base {
     }
     this.applyEdgeClasses();
     // The list is rebuilt after the next layout (what it hides depends on the new one).
-    if (this.linker && (this.readonly_ || !M.nodeById(doc, this.linker.source))) this.closeLinker(false);
+    if (this.linker && (this.readonly_ || (this.linker.dir !== 'new' && !M.nodeById(doc, this.linker.source) && !M.edgeById(doc, this.linker.source)))) this.closeLinker(false);
     // Empty state / errors.
     this.emptyEl.hidden = !this.error;
     if (this.error) this.emptyEl.textContent = this.error;
@@ -1686,40 +1686,32 @@ export class LodeFlowElement extends Base {
   private applyEdgeClasses() {
     const doc = this._doc;
     const sel = new Set(this.view.sel);
-    const trunkOf = new Map<string, M.FlowEdge>();
-    const branchSel = new Set<string>();
-    const branchFromSel = new Set<string>();
-    for (const e of doc.edges) if (M.isJunction(doc, e.from)) trunkOf.set(e.from, e);
-    for (const e of doc.edges) {
-      if (!M.isJunction(doc, e.to)) continue;
-      if (sel.has(e.id)) branchSel.add(e.to);
-      if (sel.has(e.from)) branchFromSel.add(e.to);
-    }
     const state = new Map<string, 'sel' | 'hot' | ''>();
-    for (const e of doc.edges) {
-      const toJ = trunkOf.get(e.to);
-      const fromJ = M.isJunction(doc, e.from);
-      let st: 'sel' | 'hot' | '' = '';
-      if (sel.has(e.id) || (toJ && sel.has(toJ.id))) st = 'sel';
-      else if (toJ) st = sel.has(e.from) || sel.has(toJ.to) ? 'hot' : '';
-      else if (fromJ) st = sel.has(e.to) || branchSel.has(e.from) || branchFromSel.has(e.from) ? 'hot' : '';
-      else st = sel.has(e.from) || sel.has(e.to) ? 'hot' : '';
-      state.set(e.id, st);
-      const els = this.edgeEls.get(e.id);
-      if (!els) continue;
-      const hover = this.hoverEdge === e.id || (!!toJ && this.hoverEdge === toJ.id);
-      for (const x of [els.path, els.arrow]) {
-        x.classList.toggle('sel', st === 'sel');
-        x.classList.toggle('hot', st === 'hot');
-        x.classList.toggle('hover', hover);
+    const branchSelected = new Set<string>();
+    for (const c of M.connections(doc)) {
+      const whole = sel.has(c.trunk.id);
+      const selectedBranch = c.branches.some(e => sel.has(e.id));
+      if (selectedBranch) branchSelected.add(c.trunk.id);
+      const inputHot = c.inputs.some(id => sel.has(id)), outputHot = c.outputs.some(id => sel.has(id));
+      state.set(c.trunk.id, whole ? 'sel' : selectedBranch || inputHot || outputHot ? 'hot' : '');
+      for (const e of c.branches) {
+        const hot = c.kind === 'fork' ? inputHot || sel.has(e.to) : outputHot || sel.has(e.from);
+        state.set(e.id, whole || sel.has(e.id) ? 'sel' : hot ? 'hot' : '');
+      }
+      for (const e of [c.trunk, ...c.branches]) {
+        const els = this.edgeEls.get(e.id);
+        if (!els) continue;
+        const st = state.get(e.id);
+        for (const x of [els.path, els.arrow]) {
+          x.classList.toggle('sel', st === 'sel');
+          x.classList.toggle('hot', st === 'hot');
+          x.classList.toggle('hover', this.hoverEdge === e.id || this.hoverEdge === c.trunk.id);
+        }
       }
     }
     for (const el of this.carrierEls.values()) {
-      const eid = el.dataset.eid ?? '';
-      const st = state.get(eid) ?? '';
-      const trunk = doc.edges.length && M.edgeById(doc, eid);
-      const j = trunk && M.isJunction(doc, trunk.from) ? trunk.from : null;
-      el.classList.toggle('sel', st === 'sel' || (!!j && branchSel.has(j)));
+      const eid = el.dataset.eid ?? '', st = state.get(eid) ?? '';
+      el.classList.toggle('sel', st === 'sel' || branchSelected.has(eid));
       el.classList.toggle('hot', st === 'hot');
       el.classList.toggle('hover', this.hoverEdge === eid);
     }
@@ -2607,10 +2599,14 @@ export class LodeFlowElement extends Base {
         html += this.btn('edit', ICON.label, c.trunk.label ? 'Edit label' : 'Label', '↵');
         if (c.trunk.label) html += this.btn('unlabel', ICON.unlabel, 'Remove label', '⇧⌫');
         html += this.btn('split', ICON.plus, 'Insert node', 'N');
-        html += this.btn('cause', ICON.before, 'Add cause', '⇧N');
+        if (c.kind !== 'fork') html += this.btn('cause', ICON.before, 'Add cause', '⇧N');
+        if (c.kind !== 'merge') html += this.btn('effect', ICON.node, 'Add effect', '');
+        if (c.kind === 'plain') html += this.flipBtn('link', 'linkin', ICON.link, ICON.linkIn, 'Link', 'E', 'Branch this edge to a node', 'join a node into this edge');
+        else if (c.kind === 'fork') html += this.btn('link', ICON.link, 'Branch to…', 'E');
+        else html += this.btn('linkin', ICON.linkIn, 'Join from…', '⇧E');
         html += stepBtns();
-        // A merge's trunk takes the whole merge with it; a branch takes only its own cause.
-        if (c.junction && c.trunk.id === edges[0]) del = 'Delete merge';
+        // A shared trunk removes the connection; a branch removes only its own cause or effect.
+        if (c.junction && c.trunk.id === edges[0]) del = c.kind === 'fork' ? 'Delete fork' : 'Delete merge';
       } else {
         html += `<span class="count-chip">${sel.length} selected</span>`;
         html += levelBtns();
@@ -2833,7 +2829,7 @@ export class LodeFlowElement extends Base {
       ${row('Drag', 'Pan the diagram')}
       ${row('Pinch / two-finger twist', 'Zoom / rotate the view')}
       ${row('Long-press', 'Open layout controls right where you are')}
-      ${row('Link', 'Select a node, tap Link, then tap a node or an edge in the list. An edge joins its merge')}
+      ${row('Link', 'Select a node or edge, tap Link, then choose a destination. Linking from an edge creates a fork; linking a node into an edge creates a merge')}
       ${row('List checkboxes', 'Check several rows, then tap Link or Add node to act on them together')}
       ${row('Groups', 'Tap a group’s chevron to fold or unfold it. Its selection controls also offer Dive, Expand or Collapse')}
       ${row('Delete', 'Delete the selection. The diagram toolbar’s Undo brings it back')}
@@ -2844,7 +2840,7 @@ export class LodeFlowElement extends Base {
       ${row('Click', 'Select a node, group or edge')}
       ${row('Click again', 'Edit its text (an edge: its label)')}
       ${row('⇧ / ' + (IS_MAC ? '⌘' : 'Ctrl') + ' click', 'Add to or remove from the selection')}
-      ${row('Drag from a node', 'Link it: drop on another node, or on an edge to merge into it (Esc cancels). Hold it near the frame’s edge and the view moves that way, to reach nodes out of view. With a mouse; touch uses E’s list')}
+      ${row('Drag from a node', 'Link it: drop on another node, or on an edge to merge into it (Esc cancels). Drag from an edge to a node to create a shared outgoing fork. Hold it near the frame’s edge and the view moves that way, to reach nodes out of view. With a mouse; touch uses E’s list')}
       ${row('Drag elsewhere', 'Pan (layout places things, so nothing is dragged out of place). Touch: any drag pans')}
       ${row('⇧ drag', 'Select with a box')}
       ${row('Double-click', 'Add a node there (inside a group when over one)')}
@@ -2859,12 +2855,13 @@ export class LodeFlowElement extends Base {
       ${row('↵ · F2', 'Edit the selected item (a group: its title) · then ↵ saves, ⇧↵ new line, Esc saves, and the item stays selected (Esc again deselects all), ' + K.addNext + ' saves and adds the next node')}
       ${row('J (or ↵ with several or none selected)', 'Dive: each selected group gives the selection over to what is inside it, one level down, opening a collapsed group; nodes stay selected. Nothing selected (thick blue frame): the top level')}
       ${row('K (or ⇧↵)', 'Surface: the deepest selected items give way to the group around them, one level up; items higher up stay until the level reaches them. A group Dive opened closes again. From the top level: the whole diagram, nothing selected')}
-      ${row('N / ⇧N', 'Add a node after / before the selected node. Nothing selected: N adds a node; ⇧N lists nodes for a new node to link before (↵) or after (⇧↵). An edge selected: N inserts a node in its middle and ⇧N adds a new cause that merges into it')}
-      ${row('E / ⇧E (L / H)', 'Link the selected node: pick a node or an edge from a list, nearest first / pick a node to link into it')}
+      ${row('N / ⇧N', 'Add a node after / before the selected node. Nothing selected: N adds a node; ⇧N lists nodes for a new node to link before (↵) or after (⇧↵). An edge selected: N inserts a node in its middle. A plain edge or merge: ⇧N adds a new cause')}
+      ${row('E / ⇧E (L / H)', 'Link from / into the selection, nearest first. Picking an edge creates a merge / fork. With an edge selected, choose nodes to branch to / join from')}
       ${row('S / ⇧S', 'Select the selected node’s next edge / the edge before')}
       ${row('G / ⇧G', 'Group the selection / ungroup')}
       ${row('C', 'Collapse or expand the selected group')}
-      ${row('⌫', 'Delete the selection (a merge’s shared edge deletes the merge)')}
+      ${row('Fork an edge', 'Select an edge, then Add effect for a new destination, or E / Link to choose existing nodes. Dragging an edge onto a node also branches to it. All branches share the trunk’s label')}
+      ${row('⌫', 'Delete the selection (a shared trunk deletes the whole merge or fork)')}
       ${row('⇧⌫', 'Remove the selected edge’s label; the edge stays')}
       ${row(K.undo + ' / ' + K.redo, 'Undo / redo — content and view changes alike')}
       ${row(K.rewind + ' / ' + K.fastForward, 'Express rewind / fast-forward — undo / redo changes, skipping zoom and other camera moves, so the view stays put. Zoom out, rewind, then fast-forward to watch a change with more of the diagram in view')}
@@ -2921,6 +2918,9 @@ export class LodeFlowElement extends Base {
       case 'cause':
         if (one && M.edgeById(doc, one)) return this.addCause(one);
         return;
+      case 'effect':
+        if (one && M.edgeById(doc, one)) return this.addEffect(one);
+        return;
       case 'after':
       case 'before':
         if (one && M.nodeById(doc, one)) return this.addLinked(one, act);
@@ -2947,7 +2947,7 @@ export class LodeFlowElement extends Base {
         return this.stepEdges(act === 'nextedge' ? 1 : -1);
       case 'link':
       case 'linkin':
-        if (one && M.nodeById(doc, one)) return this.openLinker(one, this.lastPointerType !== 'touch', act === 'link' ? 'out' : 'in');
+        if (one && (M.nodeById(doc, one) || M.edgeById(doc, one))) return this.openLinker(one, this.lastPointerType !== 'touch', act === 'link' ? 'out' : 'in');
         return;
       case 'tight':
         return this.changeSetting('tightGroups', String(!doc.settings.tightGroups));
@@ -3093,6 +3093,16 @@ export class LodeFlowElement extends Base {
     this.startEdit(r.id, true, e);
   }
 
+  /** A new effect branches from the selected edge's shared trunk, ready for its words. */
+  private addEffect(edgeId: string) {
+    if (this.readonly_) return;
+    const r = M.addEffect(this._doc, edgeId);
+    if (!r) return;
+    const s = this.shownScreen(edgeId);
+    const e = this.commit('Add effect', 'add', { doc: r.doc, view: { sel: [r.id] } }, { anchor: s && !this.view.follow ? { id: r.id, screen: s } : null });
+    if (e) this.startEdit(r.id, true, e);
+  }
+
   private groupSelection() {
     if (this.readonly_ || !this.view.sel.length) return;
     const r = M.groupItems(this._doc, this.view.sel);
@@ -3163,7 +3173,7 @@ export class LodeFlowElement extends Base {
     const what = singleNode
       ? M.label(singleNode.text)
       : singleEdge
-        ? `the edge ${singleEdge.junction && singleEdge.trunk.id !== sel[0] ? M.describeConnection(doc, { ...singleEdge, inputs: [M.edgeById(doc, sel[0])!.from] }) : M.describeConnection(doc, singleEdge)}`
+        ? `the edge ${singleEdge.junction && singleEdge.trunk.id !== sel[0] ? M.describeConnection(doc, singleEdge.kind === 'fork' ? { ...singleEdge, outputs: [M.edgeById(doc, sel[0])!.to] } : { ...singleEdge, inputs: [M.edgeById(doc, sel[0])!.from] }) : M.describeConnection(doc, singleEdge)}`
         : words.join(' and ');
     const aScreen = anchor ? this.shownScreen(anchor) : null;
     this.commit(`Delete ${words.join(' and ')}`, 'delete', { doc: r.doc, view: { sel: [] } }, { where, anchor: anchor && aScreen ? { id: anchor, screen: aScreen } : null });
@@ -3610,8 +3620,8 @@ export class LodeFlowElement extends Base {
       // A firm trackpad click can wobble a few pixels: under 8 (9 on touch) it is still a click.
       if (moved > (g.pointerType === 'mouse' ? 8 : 9)) {
         if (g.longPress) clearTimeout(g.longPress);
-        if (g.target.type === 'node' && g.pointerType === 'mouse' && g.button === 0 && !g.shift && !this.readonly_ && !this.spaceDown) {
-          // A mouse drag that starts on a node draws a link; touch keeps one-finger pan.
+        if ((g.target.type === 'node' || g.target.type === 'edge') && g.pointerType === 'mouse' && g.button === 0 && !g.shift && !this.readonly_ && !this.spaceDown) {
+          // A mouse drag from a node or edge draws a link; touch keeps one-finger pan.
           g.kind = 'link';
           this.vp.classList.add('linking');
           this.closeLinker(false);
@@ -3674,7 +3684,7 @@ export class LodeFlowElement extends Base {
       if (cancelled || !g.target.id) return;
       if (over?.ok && over.hit.id) this.performLink(g.target.id, over.hit as { type: 'node' | 'edge'; id: string }, 'drag');
       else if (over?.why) this.nudge(p, over.why);
-      else if (Math.hypot(p.x - g.start.x, p.y - g.start.y) > 40) this.nudge(p, 'Drop on a node to link, or on an edge to merge');
+      else if (Math.hypot(p.x - g.start.x, p.y - g.start.y) > 40) this.nudge(p, g.target.type === 'edge' ? 'Drop on a node to branch to it' : 'Drop on a node to link, or on an edge to merge');
       return;
     }
     if (cancelled) {
@@ -3825,6 +3835,10 @@ export class LodeFlowElement extends Base {
   /** What dropping a link from `source` at screen point `p` would do. */
   private linkTargetAt(source: string, p: Pt): { hit: Hit; ok: boolean; why: string | null } {
     const hit = this.pickAt(p);
+    if (M.edgeById(this._doc, source)) {
+      const why = hit.type === 'node' && hit.id ? M.forkProblem(this._doc, source, hit.id) : null;
+      return { hit, ok: hit.type === 'node' && !!hit.id && !why, why };
+    }
     if (hit.type === 'node' && hit.id) {
       if (hit.id === source) return { hit, ok: false, why: null };
       const why = M.linkProblem(this._doc, source, hit.id);
@@ -3910,7 +3924,8 @@ export class LodeFlowElement extends Base {
   private performLink(source: string, target: { type: 'node' | 'edge'; id: string }, via: 'drag' | 'list', keep = source): M.LinkResult | null {
     if (this.readonly_) return null;
     const doc = this._doc;
-    const r = target.type === 'node' ? M.linkNodes(doc, source, target.id) : M.linkToEdge(doc, source, target.id);
+    const fromEdge = !!M.edgeById(doc, source);
+    const r = fromEdge ? M.linkFromEdge(doc, source, target.id) : target.type === 'node' ? M.linkNodes(doc, source, target.id) : M.linkToEdge(doc, source, target.id);
     const at = this.lastPointer ?? { x: this.vw / 2, y: this.vh / 2 };
     if ('error' in r) {
       this.nudge(at, r.error);
@@ -3918,7 +3933,7 @@ export class LodeFlowElement extends Base {
     }
     const src = M.label(M.nodeById(doc, source)?.text ?? '');
     const conn = target.type === 'edge' ? M.connectionOf(doc, target.id) : null;
-    const what =
+    const what = fromEdge ? `Branch ${M.describeConnection(doc, M.connectionOf(doc, source)!)} to ${M.label(M.nodeById(doc, target.id)?.text ?? '')}` :
       target.type === 'node'
         ? `Link ${src} → ${M.label(M.nodeById(doc, target.id)?.text ?? '')}`
         : `Merge ${src} into ${conn ? M.describeConnection(doc, conn) : 'the edge'}`;
@@ -3932,7 +3947,7 @@ export class LodeFlowElement extends Base {
    * Several links from the list in one step (one undo). Links an earlier one made impossible are
    * skipped and named; when none can be made, nothing changes and the reason is shown.
    */
-  private performLinks(keep: string, links: { from: string; to: { type: 'node' | 'edge'; id: string } }[], picks: LinkItem[], back: boolean): boolean {
+  private performLinks(keep: string, links: { from: string; fromType?: 'node' | 'edge'; to: { type: 'node' | 'edge'; id: string } }[], picks: LinkItem[], back: boolean): boolean {
     if (this.readonly_) return false;
     const r = M.linkEach(this._doc, links);
     const at = this.lastPointer ?? { x: this.vw / 2, y: this.vh / 2 };
@@ -3940,7 +3955,8 @@ export class LodeFlowElement extends Base {
       this.nudge(at, r.problems[0] ?? 'Nothing to link');
       return false;
     }
-    const src = M.label(M.nodeById(this._doc, keep)?.text ?? '');
+    const conn = M.connectionOf(this._doc, keep);
+    const src = conn ? M.describeConnection(this._doc, conn) : M.label(M.nodeById(this._doc, keep)?.text ?? '');
     const what = back ? `Link ${r.made} nodes → ${src}` : `Link ${src} → ${r.made} item${r.made === 1 ? '' : 's'}`;
     const s = this.shownScreen(keep);
     if (!this.commit(what, 'link', { doc: r.doc, view: { sel: this.view.sel } }, { anchor: s && !this.view.follow ? { id: keep, screen: s } : null })) return false;
@@ -3956,7 +3972,7 @@ export class LodeFlowElement extends Base {
     if (hit.type === 'node') {
       const n = this.shown.nodes.get(hit.id);
       const sz = this.sizes.get(hit.id);
-      const s = this.shown.nodes.get(source);
+      const s = this.shown.nodes.get(source) ?? this.edgeAnchor(source);
       if (!n || !sz) return null;
       return s ? rectExit(n, sz, s) : { x: n.x, y: n.y };
     }
@@ -3982,19 +3998,19 @@ export class LodeFlowElement extends Base {
         mark = { hit: { type: it.kind, id: it.id }, ok: true, why: null };
         if (this.linker.dir !== 'new') {
           src = back ? it.id : this.linker.source;
-          end = this.hitAnchor(back ? { type: 'node', id: this.linker.source } : mark.hit, src);
+          end = this.hitAnchor(back ? { type: M.edgeById(this._doc, this.linker.source) ? 'edge' : 'node', id: this.linker.source } : mark.hit, src);
         }
       }
     }
     this.markLinkTarget(mark);
     const n = src ? this.shown.nodes.get(src) : null;
     const sz = src ? this.sizes.get(src) : null;
-    if (!n || !sz || !end) {
+    const a = n && sz && end ? rectExit(n, sz, end) : src ? this.edgeAnchor(src) : null;
+    if (!a || !end) {
       this.linkLine.setAttribute('d', '');
       this.linkHead.setAttribute('d', '');
       return;
     }
-    const a = rectExit(n, sz, end);
     const f = (v: number) => Math.round(v * 10) / 10;
     this.linkLine.setAttribute('d', `M${f(a.x)} ${f(a.y)}L${f(end.x)} ${f(end.y)}`);
     this.linkHead.setAttribute('d', mark?.ok ? arrowData(Float64Array.of(a.x, a.y, end.x, end.y)) : '');
@@ -4032,8 +4048,9 @@ export class LodeFlowElement extends Base {
       const out: string[] = [];
       for (const c of M.connections(doc)) {
         const i = c.inputs.indexOf(pivot);
-        if (i >= 0) out.push(c.junction ? c.branches[i].id : c.trunk.id);
-        else if (c.target === pivot) out.push(c.trunk.id);
+        const o = c.outputs.indexOf(pivot);
+        if (i >= 0) out.push(c.kind === 'merge' ? c.branches[i].id : c.trunk.id);
+        else if (o >= 0) out.push(c.kind === 'fork' ? c.branches[o].id : c.trunk.id);
       }
       return out;
     };
@@ -4103,7 +4120,9 @@ export class LodeFlowElement extends Base {
 
   private openLinker(source: string, focusInput: boolean, dir: Linker['dir'] = 'out') {
     const n = dir === 'new' ? null : M.nodeById(this._doc, source);
-    if (this.readonly_ || (dir !== 'new' && !n)) return;
+    const c = dir === 'new' ? null : M.connectionOf(this._doc, source);
+    if (this.readonly_ || (dir !== 'new' && !n && !c)) return;
+    if (c && ((dir === 'out' && c.kind === 'merge') || (dir === 'in' && c.kind === 'fork'))) return this.nudge(this.hintPoint(), `This connection is already a ${c.kind}`);
     if (this.linker?.source === source && this.linker.dir === dir) {
       (this.linkerEl.querySelector('input') as HTMLInputElement | null)?.focus({ preventScroll: true });
       return;
@@ -4112,9 +4131,9 @@ export class LodeFlowElement extends Base {
     this.linker = { source, dir, filter: '', active: 0, items: [], receipt: null, focusInput, checked: [], anchor: null };
     this.linkerEntry = null;
     const back = dir === 'in';
-    const name = n ? M.label(n.text) : '';
-    const title = dir === 'new' ? 'Add a node linked to…' : back ? `Link … to ${name}` : `Link ${name} to…`;
-    const filter = dir === 'out' ? 'Filter nodes and edges' : 'Filter nodes';
+    const name = n ? M.label(n.text) : c ? M.describeConnection(this._doc, c) : '';
+    const title = dir === 'new' ? 'Add a node linked to…' : c ? (back ? `Join … into ${name}` : `Branch ${name} to…`) : back ? `Link … to ${name}` : `Link ${name} to…`;
+    const filter = dir !== 'new' && !c ? 'Filter nodes and edges' : 'Filter nodes';
     const listName = dir === 'new' ? 'Nodes for the new node to link to' : back ? 'Nodes to link into it' : 'Link targets';
     // A pick acts on every checked row too; the commit bar says so and acts on the checked rows alone.
     const act = dir === 'new' ? `${kbd('↵')} before · ${kbd('⇧↵')} after` : `${kbd('↵')} link`;
@@ -4247,14 +4266,15 @@ export class LodeFlowElement extends Base {
       return this.addLinkedTo(anchors, shift ? 'after' : 'before');
     }
     const back = L.dir === 'in';
+    const sourceType = M.edgeById(this._doc, L.source) ? 'edge' as const : 'node' as const;
     let ok: boolean;
     if (picks.length === 1) {
       const one = picks[0];
-      ok = !!(back ? this.performLink(one.id, { type: 'node', id: L.source }, 'list', L.source) : this.performLink(L.source, { type: one.kind, id: one.id }, 'list'));
+      ok = !!(back ? this.performLink(one.id, { type: sourceType, id: L.source }, 'list', L.source) : this.performLink(L.source, { type: one.kind, id: one.id }, 'list'));
     } else {
       ok = this.performLinks(
         L.source,
-        picks.map((x) => (back ? { from: x.id, to: { type: 'node' as const, id: L.source } } : { from: L.source, to: { type: x.kind, id: x.id } })),
+        picks.map((x) => (back ? { from: x.id, fromType: x.kind, to: { type: sourceType, id: L.source } } : { from: L.source, fromType: sourceType, to: { type: x.kind, id: x.id } })),
         picks,
         back,
       );
@@ -4264,7 +4284,8 @@ export class LodeFlowElement extends Base {
     const name = (x: LinkItem) => (x.kind === 'node' ? M.label(x.text, 'an empty node') : `the edge ${x.sub || x.text}`);
     const nodes = picks.filter((x) => x.kind === 'node');
     const edges = picks.filter((x) => x.kind === 'edge');
-    if (back) this.linker.receipt = `Linked from ${joinAnd(picks.map(name))}`;
+    if (sourceType === 'edge' && !back) this.linker.receipt = `Branched to ${joinAnd(picks.map(name))}`;
+    else if (back) this.linker.receipt = `Linked from ${joinAnd(picks.map(name))}`;
     else if (!nodes.length) this.linker.receipt = `Merged into ${joinAnd(edges.map((x) => x.sub || x.text))}`;
     else this.linker.receipt = `Linked to ${joinAnd(nodes.map(name))}${edges.length ? `; merged into ${joinAnd(edges.map((x) => x.sub || x.text))}` : ''}`;
     this.linker.checked = [];
@@ -4321,7 +4342,7 @@ export class LodeFlowElement extends Base {
 
   /**
    * Rebuilds the rows: other nodes, then edges, each nearest-to-furthest from the source on screen.
-   * A reverse link lists nodes only (an edge cannot be a cause).
+   * Reverse links also offer edges: choosing one branches its trunk to the selected node.
    */
   private refreshLinker() {
     const L = this.linker;
@@ -4330,20 +4351,21 @@ export class LodeFlowElement extends Base {
     this.linkerDoc = doc;
     const back = L.dir === 'in';
     const fresh = L.dir === 'new';
+    const sourceEdge = !!M.edgeById(doc, L.source);
     // A new node's list is ordered from the middle of the view (it has no place of its own yet).
     const from = (L.source && this.shownScreen(L.source)) || { x: this.vw / 2, y: this.vh / 2 };
     const dist = (p: Pt | null) => (p ? Math.hypot(p.x - from.x, p.y - from.y) : Infinity);
     const nodes: (LinkItem & { d: number })[] = [];
     for (const n of doc.nodes) {
-      if (!fresh && (n.id === L.source || (back ? M.linked(doc, n.id, L.source) : M.linked(doc, L.source, n.id)))) continue;
+      if (!fresh && (sourceEdge ? (back ? M.mergeProblem(doc, n.id, L.source) : M.forkProblem(doc, L.source, n.id)) : (back ? M.linkProblem(doc, n.id, L.source) : M.linkProblem(doc, L.source, n.id)))) continue;
       // Hidden in a collapsed group: judged by the current layout, not the frame still on screen.
       if (this.geo?.nodes.get(n.id)?.visible === false) continue;
       nodes.push({ kind: 'node', id: n.id, text: n.text.trim() ? n.text : 'Empty node', sub: '', empty: !n.text.trim(), d: dist(this.shownScreen(n.id)) });
     }
     const edges: (LinkItem & { d: number })[] = [];
-    for (const c of L.dir === 'out' ? M.connections(doc) : []) {
+    for (const c of !fresh && !sourceEdge ? M.connections(doc) : []) {
       // The same checks a pick makes (mergeProblem), so the list never offers a refusal.
-      if (c.target === L.source || c.inputs.includes(L.source) || M.linked(doc, L.source, c.target)) continue;
+      if (back ? M.forkProblem(doc, c.trunk.id, L.source) : M.mergeProblem(doc, L.source, c.trunk.id)) continue;
       if (this.geo?.edges.get(c.trunk.id)?.hidden) continue;
       const words = M.describeConnection(doc, c);
       const lbl = c.trunk.label?.trim();
@@ -4368,7 +4390,7 @@ export class LodeFlowElement extends Base {
     let lastKind = '';
     L.items.forEach((it, i) => {
       if (it.kind !== lastKind) {
-        html += `<li class="lk-h" role="presentation">${it.kind === 'node' ? 'Nodes' : 'Edges — joining one merges into it'}</li>`;
+        html += `<li class="lk-h" role="presentation">${it.kind === 'node' ? 'Nodes' : L.dir === 'in' ? 'Edges — branch one to this node' : 'Edges — joining one merges into it'}</li>`;
         lastKind = it.kind;
       }
       html += `<li class="lk-item${it.empty ? ' empty' : ''}${it.kind === 'edge' ? ' is-edge' : ''}" role="option" id="lk-${i}" data-i="${i}" data-k="${esc(`${it.kind}:${it.id}`)}" aria-selected="false"><span class="lk-ck" aria-hidden="true"></span><span class="lk-tx"><span class="lk-t">${esc(it.text)}</span>${it.sub ? `<span class="lk-s">${esc(it.sub)}</span>` : ''}</span></li>`;
@@ -4637,8 +4659,8 @@ export class LodeFlowElement extends Base {
         // ⇧E is the reverse link: the picked node links into the selected one. L is E (onward, to the
         // right in a left-to-right flow) and H is ⇧E (back); ⇧ turns either around.
         const back = (k === 'h' || k === 'H') !== e.shiftKey;
-        if (one && M.nodeById(this._doc, one) && !this.readonly_) return this.openLinker(one, true, back ? 'in' : 'out');
-        return this.nudge(this.hintPoint(), this.readonly_ ? 'This diagram is read-only' : `Select a node, then press ${back ? '⇧E (or H) to link another node into it' : 'E (or L) to link it'}`);
+        if (one && (M.nodeById(this._doc, one) || M.edgeById(this._doc, one)) && !this.readonly_) return this.openLinker(one, true, back ? 'in' : 'out');
+        return this.nudge(this.hintPoint(), this.readonly_ ? 'This diagram is read-only' : `Select a node or edge, then press ${back ? '⇧E (or H) to link into it' : 'E (or L) to link from it'}`);
       }
       case 's':
       case 'S':

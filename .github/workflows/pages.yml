@@ -35,7 +35,7 @@ jobs:
         run: pnpm --dir web exec playwright install --with-deps chromium firefox webkit
       - name: Component tests
         working-directory: web
-        run: node test/model.mjs && node test/geometry.mjs && node test/history.mjs && node test/theme.mjs && node test/limits.mjs && node test/placement.mjs && node test/presentation.mjs && node test/controls.mjs && node test/e2e.mjs
+        run: node test/model.mjs && node test/geometry.mjs && node test/history.mjs && node test/theme.mjs && node test/limits.mjs && node test/placement.mjs && node test/presentation.mjs && node test/controls.mjs && node test/forks.mjs && node test/e2e.mjs
       - name: Build tutorial
         run: node scripts/build-site.mjs
       - name: Tutorial tests

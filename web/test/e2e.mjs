@@ -1218,7 +1218,7 @@ await scenario('E opens the link list: nodes, then edges, nearest first; ↓ ↵
   assert.equal(await shadowActive(page), 'DIV.vp active', 'focus returns to the diagram');
 });
 
-await scenario('⇧E (or ⇧-click on Link, which ⇧ turns around in place) links into the selection: nodes only; reopening never doubles a key', async (page) => {
+await scenario('⇧E (or ⇧-click on Link, which ⇧ turns around in place) links nodes or edges into the selection; reopening never doubles a key', async (page) => {
   const t = await center(page, '.node[data-id="trust"]');
   await page.mouse.click(t.x, t.y);
   await settle(page, 300);
@@ -1261,8 +1261,8 @@ await scenario('⇧E (or ⇧-click on Link, which ⇧ turns around in place) lin
     };
   });
   assert.equal(head.title, 'Link … to ‘Customers lose trust’');
-  assert.deepEqual(head.headers, ['Nodes'], 'nodes only: an edge cannot be a cause');
-  assert.deepEqual(head.kinds, ['node']);
+  assert.deepEqual(head.headers, ['Nodes', 'Edges — branch one to this node']);
+  assert.deepEqual(head.kinds, ['node', 'edge']);
   assert.ok(!head.offersACause && !head.offersItself, 'nodes that already link into it are left out');
   await shot(page, '17b-reverse-link-list');
   // Closing and reopening the list must not stack its key handling: ↓ moves one row, ↵ links one node.
@@ -1621,7 +1621,7 @@ await scenario('edges: click selects, click again labels, S / ⇧S (or Select ed
   await settle(page, 300);
   assert.deepEqual((await el(page)).sel, [id]);
   const acts = await E(page, () => [...document.querySelector('lode-flow').shadowRoot.querySelectorAll('.node-magnet .mb:not([hidden])')].map((b) => b.textContent));
-  assert.deepEqual(acts, ['Label↵', 'Insert nodeN', 'Add cause⇧N', 'Select edgeS⇧S', 'Delete⌫']);
+  assert.deepEqual(acts, ['Label↵', 'Insert nodeN', 'Add cause⇧N', 'Add effect', 'LinkE⇧E', 'Select edgeS⇧S', 'Delete⌫']);
   await shot(page, '18-edge-selected');
   await page.mouse.click(m.x, m.y);
   await settle(page, 300);

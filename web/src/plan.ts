@@ -1,5 +1,5 @@
 // What the engine lays out for a document. Nodes go in as they are. Each junction goes in as a
-// small node of its own (a dot, or its merge's shared label), so branches meet at one point.
+// small node of its own (a dot, or its connection's shared label), so branches meet at one point.
 // A plain edge's label goes in as a size on the edge: the engine hangs it on the edge's middle
 // bend point, lengthening a one-rank edge to two, and keeps it clear of everything else.
 // Junction dots and labels are both drawn as *carriers*.
@@ -37,7 +37,7 @@ export interface Plan {
   parts: EnginePart[];
   /** Doc edge id → its engine part. */
   partOf: Map<string, number>;
-  /** Doc edge ids that end in an arrowhead (all but merge branches). */
+  /** Doc edge ids that end in an arrowhead (every edge ending at a node). */
   arrow: Set<string>;
   /** Doc edge id → the carrier it runs through or into, if any. */
   carrierOf: Map<string, string>;
@@ -54,7 +54,7 @@ export function plan(doc: FlowDoc, draft: { edge: string; text: string } | null 
   doc.nodes.forEach((n, i) => index.set(n.id, i));
   const nodeCount = doc.nodes.length;
   const groupOf = (id: string) => M.nodeById(doc, id)?.group ?? null;
-  // Draft of a branch's label writes the merge's shared label.
+  // Draft of a branch's label writes the connection's shared label.
   if (draft) {
     const c = M.connectionOf(doc, draft.edge);
     draft = c ? { edge: c.trunk.id, text: draft.text } : null;
@@ -66,9 +66,10 @@ export function plan(doc: FlowDoc, draft: { edge: string; text: string } | null 
   const carriers: Carrier[] = [];
   const carrierOf = new Map<string, string>();
   for (const j of doc.junctions) {
-    const trunk = doc.edges.find((e) => e.from === j.id);
-    if (!trunk) continue;
-    const ends = [...doc.edges.filter((e) => e.to === j.id).map((e) => e.from), trunk.to];
+    const c = M.connectionOf(doc, doc.edges.find((e) => e.from === j.id || e.to === j.id)?.id ?? '');
+    if (!c) continue;
+    const trunk = c.trunk;
+    const ends = [...c.inputs, ...c.outputs];
     const key = junctionKey(j.id);
     index.set(key, nodeCount + carriers.length);
     carriers.push({ key, kind: 'junction', edge: trunk.id, text: textFor(trunk.id, trunk.label), group: M.commonGroup(doc, ends.map(groupOf)) });

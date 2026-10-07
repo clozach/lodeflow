@@ -13,23 +13,21 @@ export interface FlowNode {
 
 export interface FlowEdge {
   id: string;
-  /** A node id, or a junction id when this edge is the trunk of a merge. */
+  /** A node id, or a junction id when this edge touches a junction. */
   from: string;
-  /** A node id, or a junction id when this edge is a branch of a merge. */
+  /** A node id, or a junction id when this edge touches a junction. */
   to: string;
   /** Prefer this edge as the back edge when it closes a loop. */
   back?: boolean;
-  /** Text drawn on the edge. A merge keeps its one shared label on the trunk. */
+  /** Text drawn on the edge. Merges and forks keep their shared label on the trunk. */
   label?: string;
 }
 
 /**
- * A merge point: two or more branches (node → junction) join one trunk (junction → node),
- * so the causes share one edge and one label. Made by linking a node onto an existing edge.
+ * A merge joins several incoming branches into one outgoing trunk; a fork splits one incoming
+ * trunk into several outgoing branches. Legacy junctions without kind are merges.
  */
-export interface FlowJunction {
-  id: string;
-}
+export type FlowJunction = { id: string; kind?: 'merge' } | { id: string; kind: 'fork' };
 
 export interface FlowGroup {
   id: string;
@@ -132,7 +130,7 @@ export function normalizeDoc(raw: unknown, fallback: Partial<FlowSettings> = {})
   });
   const nids = new Set(nodes.map((n) => n.id));
   const junctionsIn: any[] = Array.isArray(r.junctions) ? r.junctions : [];
-  const junctions: FlowJunction[] = junctionsIn.map((j) => ({ id: fresh(j?.id, 'j') }));
+  const junctions: FlowJunction[] = junctionsIn.map((j) => ({ id: fresh(j?.id, 'j'), kind: j?.kind === 'fork' ? 'fork' : 'merge' }));
   const jids = new Set(junctions.map((j) => j.id));
   const edges: FlowEdge[] = [];
   const pairs = new Set<string>();
@@ -161,7 +159,8 @@ export function normalizeDoc(raw: unknown, fallback: Partial<FlowSettings> = {})
 }
 
 /**
- * Keeps every junction a real merge: two or more branches in, one trunk out. A junction left
+ * Keeps every junction real: at least two branches and exactly one trunk, with direction set by
+ * its kind (legacy missing kind means merge). A junction left
  * with one branch dissolves back into a plain edge (keeping the trunk's id and label); one left
  * with no branches or no trunk goes, with its edges. Linear per pass; repeats until stable. A
  * junction whose edges another junction rewrote in the same pass (a chain of junctions) waits for
@@ -187,9 +186,17 @@ export function tidyJunctions(doc: FlowDoc): FlowDoc {
     // Edges this pass created are not in `edges` yet: a junction that would rely on one waits.
     const created = new Set<FlowEdge>();
     for (const j of junctions) {
-      const i = ins.get(j.id) ?? [];
-      const o = outs.get(j.id) ?? [];
+      const fork = j.kind === 'fork';
+      let i = (fork ? outs : ins).get(j.id) ?? [];
+      const o = (fork ? ins : outs).get(j.id) ?? [];
       if (i.some(touched) || o.some(touched)) continue;
+      // An imported branch returning to the trunk's own endpoint is a self-link.
+      const end = fork ? o[0]?.from : o[0]?.to;
+      i = i.filter((e) => {
+        if ((fork ? e.to : e.from) !== end) return true;
+        drop.add(e);
+        return false;
+      });
       if (!i.length || !o.length) {
         i.forEach((e) => drop.add(e));
         o.forEach((e) => drop.add(e));
@@ -200,16 +207,18 @@ export function tidyJunctions(doc: FlowDoc): FlowDoc {
       if (i.length === 1) {
         const [branch] = i;
         const [trunk] = o;
-        const key = branch.from + '\u0000' + trunk.to;
+        const from = fork ? trunk.from : branch.from;
+        const to = fork ? branch.to : trunk.to;
+        const key = from + '\u0000' + to;
         const lbl = trunk.label ?? branch.label;
         const twin = byPair.get(key);
         if (twin && created.has(twin)) continue;
         drop.add(branch);
-        if (branch.from === trunk.to || twin || swap.has(trunk)) {
+        if (from === to || twin || swap.has(trunk)) {
           drop.add(trunk);
           if (twin && !twin.label && lbl && !drop.has(twin)) swap.set(twin, { ...(swap.get(twin) ?? twin), label: lbl });
         } else {
-          const next: FlowEdge = { id: trunk.id, from: branch.from, to: trunk.to };
+          const next: FlowEdge = { id: trunk.id, from, to };
           if (trunk.back || branch.back) next.back = true;
           if (lbl) next.label = lbl;
           swap.set(trunk, next);
@@ -236,6 +245,7 @@ interface DocIndex {
   groups: Map<string, FlowGroup>;
   edges: Map<string, FlowEdge>;
   junctions: Set<string>;
+  forks: Set<string>;
   trunk: Map<string, FlowEdge>;
   branches: Map<string, FlowEdge[]>;
   conns: Connection[] | null;
@@ -248,17 +258,21 @@ function indexOf(doc: FlowDoc): DocIndex {
   let ix = indexes.get(doc);
   if (ix) return ix;
   const junctions = new Set(doc.junctions.map((j) => j.id));
+  const forks = new Set(doc.junctions.filter((j) => j.kind === 'fork').map((j) => j.id));
   const trunk = new Map<string, FlowEdge>();
   const branches = new Map<string, FlowEdge[]>();
   for (const e of doc.edges) {
-    if (junctions.has(e.from) && !trunk.has(e.from)) trunk.set(e.from, e);
-    if (junctions.has(e.to)) (branches.get(e.to) ?? branches.set(e.to, []).get(e.to)!).push(e);
+    const trunkJ = junctions.has(e.from) && !forks.has(e.from) ? e.from : forks.has(e.to) ? e.to : null;
+    const branchJ = junctions.has(e.to) && !forks.has(e.to) ? e.to : forks.has(e.from) ? e.from : null;
+    if (trunkJ && !trunk.has(trunkJ)) trunk.set(trunkJ, e);
+    if (branchJ) (branches.get(branchJ) ?? branches.set(branchJ, []).get(branchJ)!).push(e);
   }
   ix = {
     nodes: new Map(doc.nodes.map((n) => [n.id, n])),
     groups: new Map(doc.groups.map((g) => [g.id, g])),
     edges: new Map(doc.edges.map((e) => [e.id, e])),
     junctions,
+    forks,
     trunk,
     branches,
     conns: null,
@@ -286,52 +300,59 @@ export function isJunction(doc: FlowDoc, id: string) {
 }
 
 /**
- * One cause-and-effect link as the viewer sees it: a plain edge, or a whole merge.
+ * One connection as the viewer sees it: a plain edge, a merge, or a fork.
  * `trunk` carries the label; `branches` are empty for a plain edge.
  */
 export interface Connection {
+  kind: 'plain' | 'merge' | 'fork';
   trunk: FlowEdge;
   junction: string | null;
   branches: FlowEdge[];
   /** Cause node ids, in creation order. */
   inputs: string[];
-  /** Effect node id. */
+  /** Effect node ids, in creation order. */
+  outputs: string[];
+  /** Legacy first effect; use outputs for fork-aware callers. */
   target: string;
 }
 
-/** The connection an edge belongs to (a branch or trunk resolves to its whole merge). */
+/** The connection an edge belongs to (a branch or trunk resolves to its whole shared connection). */
 export function connectionOf(doc: FlowDoc, edgeId: string): Connection | null {
   const ix = indexOf(doc);
   const e = ix.edges.get(edgeId);
   if (!e) return null;
   const j = ix.junctions.has(e.to) ? e.to : ix.junctions.has(e.from) ? e.from : null;
-  if (!j) return { trunk: e, junction: null, branches: [], inputs: [e.from], target: e.to };
+  if (!j) return { kind: 'plain', trunk: e, junction: null, branches: [], inputs: [e.from], outputs: [e.to], target: e.to };
   const trunk = ix.trunk.get(j);
   if (!trunk) return null;
   const branches = ix.branches.get(j) ?? [];
-  return { trunk, junction: j, branches, inputs: branches.map((b) => b.from), target: trunk.to };
+  const fork = ix.forks.has(j);
+  const inputs = fork ? [trunk.from] : branches.map((b) => b.from);
+  const outputs = fork ? branches.map((b) => b.to) : [trunk.to];
+  return { kind: fork ? 'fork' : 'merge', trunk, junction: j, branches, inputs, outputs, target: outputs[0] };
 }
 
-/** Every connection once (plain edges and merges), in creation order of their trunks. */
+/** Every connection once (plain edges, merges and forks), in creation order of their trunks. */
 export function connections(doc: FlowDoc): Connection[] {
   const ix = indexOf(doc);
   if (!ix.conns) {
     ix.conns = [];
     for (const e of doc.edges) {
-      if (ix.junctions.has(e.to)) continue;
+      const j = ix.junctions.has(e.to) ? e.to : ix.junctions.has(e.from) ? e.from : null;
+      if (j && ix.trunk.get(j)?.id !== e.id) continue;
       const c = connectionOf(doc, e.id);
-      if (c) ix.conns.push(c);
+      if (c && c.trunk.id === e.id) ix.conns.push(c);
     }
   }
   return ix.conns;
 }
 
-/** True when `from` already causes `to`, directly or through a merge. */
+/** True when `from` already causes `to`, directly or through a shared connection. */
 export function linked(doc: FlowDoc, from: string, to: string): boolean {
   const ix = indexOf(doc);
   if (!ix.links) {
     ix.links = new Set();
-    for (const c of connections(doc)) for (const i of c.inputs) ix.links.add(i + '\u0000' + c.target);
+    for (const c of connections(doc)) for (const i of c.inputs) for (const o of c.outputs) ix.links.add(i + '\u0000' + o);
   }
   return ix.links.has(from + '\u0000' + to);
 }
@@ -375,10 +396,10 @@ export function commonGroup(doc: FlowDoc, groups: (string | null | undefined)[])
   return null;
 }
 
-/** Plain words for a connection: ‘A’ → ‘B’, or ‘A’ + ‘B’ → ‘C’ for a merge. */
+/** Plain words for a connection, with shared causes or effects joined by ‘ + ’. */
 export function describeConnection(doc: FlowDoc, c: Connection): string {
   const t = (id: string) => label(nodeById(doc, id)?.text ?? '');
-  return `${c.inputs.map(t).join(' + ')} → ${t(c.target)}`;
+  return `${c.inputs.map(t).join(' + ')} → ${c.outputs.map(t).join(' + ')}`;
 }
 
 /** True when `id` is the group `gid` or nested somewhere inside it. */
@@ -408,7 +429,7 @@ export function parentOf(doc: FlowDoc, id: string): string | null {
   const g = groupById(doc, id);
   if (g) return g.parent ?? null;
   const c = connectionOf(doc, id);
-  return c ? commonGroup(doc, [...c.inputs, c.target].map((x) => nodeById(doc, x)?.group ?? null)) : null;
+  return c ? commonGroup(doc, [...c.inputs, ...c.outputs].map((x) => nodeById(doc, x)?.group ?? null)) : null;
 }
 
 /** How many groups hold an item (0 = top level). */
@@ -514,7 +535,7 @@ export function setGroupText(doc: FlowDoc, id: string, text: string): FlowDoc {
 
 /**
  * Removes nodes, groups (with everything inside them), edges, and the edges that touched them.
- * Deleting a merge's trunk removes the whole merge; deleting one branch leaves the rest.
+ * Deleting a shared trunk removes its whole connection; deleting one branch leaves the rest.
  */
 export function deleteItems(doc: FlowDoc, ids: Iterable<string>): { doc: FlowDoc; nodes: number; groups: number; edges: number } {
   const killN = new Set<string>();
@@ -531,13 +552,14 @@ export function deleteItems(doc: FlowDoc, ids: Iterable<string>): { doc: FlowDoc
       const e = edgeById(doc, id);
       if (!e) continue;
       killE.add(id);
-      if (isJunction(doc, e.from)) doc.edges.filter((x) => x.to === e.from).forEach((x) => killE.add(x.id));
+      const c = connectionOf(doc, id);
+      if (c?.junction && c.trunk.id === id) c.branches.forEach((x) => killE.add(x.id));
     }
   }
   const nodes = doc.nodes.filter((n) => !killN.has(n.id));
   const edges = doc.edges.filter((e) => !killE.has(e.id) && !killN.has(e.from) && !killN.has(e.to));
   const groups = doc.groups.filter((g) => !killG.has(g.id));
-  // Count connections as the viewer sees them: a merge is one.
+  // Count connections as the viewer sees them: a shared connection is one.
   const trunks = new Set([...killE].map((id) => connectionOf(doc, id)?.trunk.id));
   return { doc: tidyJunctions({ ...doc, nodes, edges, groups }), nodes: killN.size, groups: killG.size, edges: trunks.size };
 }
@@ -556,9 +578,10 @@ export function linkProblem(doc: FlowDoc, from: string, to: string): string | nu
 export function mergeProblem(doc: FlowDoc, from: string, edgeId: string): string | null {
   const c = connectionOf(doc, edgeId);
   if (!c || !nodeById(doc, from)) return 'Link a node to an edge';
-  if (c.target === from) return 'This edge already points at it';
+  if (c.kind === 'fork') return 'This connection is already a fork';
+  if (c.outputs.includes(from)) return 'This edge already points at it';
   if (c.inputs.includes(from)) return 'Already part of this edge';
-  if (linked(doc, from, c.target)) return 'Already linked to its effect';
+  if (linked(doc, from, c.outputs[0])) return 'Already linked to its effect';
   return null;
 }
 
@@ -590,19 +613,44 @@ export function linkToEdge(doc: FlowDoc, from: string, edgeId: string): LinkResu
   if (e.label) trunk.label = e.label;
   const first: FlowEdge = { id: uid('e'), from: e.from, to: j };
   const edges = doc.edges.flatMap((x) => (x === e ? [first, trunk] : [x]));
-  return { doc: { ...doc, junctions: [...doc.junctions, { id: j }], edges: [...edges, { id, from, to: j }] }, edge: id, trunk: e.id, merged: true };
+  return { doc: { ...doc, junctions: [...doc.junctions, { id: j, kind: 'merge' }], edges: [...edges, { id, from, to: j }] }, edge: id, trunk: e.id, merged: true };
+}
+
+/** Why this edge cannot fork toward `to`, or null when it can. */
+export function forkProblem(doc: FlowDoc, edgeId: string, to: string): string | null {
+  const c = connectionOf(doc, edgeId);
+  if (!c || !nodeById(doc, to)) return 'Link an edge to a node';
+  if (c.kind === 'merge') return 'This connection is already a merge';
+  if (c.inputs.includes(to)) return 'This edge already starts at it';
+  if (c.outputs.includes(to)) return 'Already part of this edge';
+  if (linked(doc, c.inputs[0], to)) return 'Already linked from its cause';
+  return null;
+}
+
+/** Links an edge to another effect, retaining its id, label and loop hint on the shared trunk. */
+export function linkFromEdge(doc: FlowDoc, edgeId: string, to: string): LinkResult {
+  const why = forkProblem(doc, edgeId, to);
+  const c = connectionOf(doc, edgeId);
+  if (why || !c) return { error: why ?? 'Link an edge to a node' };
+  const id = uid('e');
+  if (c.junction) return { doc: { ...doc, edges: [...doc.edges, { id, from: c.junction, to }] }, edge: id, trunk: c.trunk.id, merged: true };
+  const e = c.trunk, j = uid('j');
+  const trunk: FlowEdge = { ...e, to: j };
+  const first: FlowEdge = { id: uid('e'), from: j, to: e.to };
+  const edges = doc.edges.flatMap((x) => x === e ? [trunk, first] : [x]);
+  return { doc: { ...doc, junctions: [...doc.junctions, { id: j, kind: 'fork' }], edges: [...edges, { id, from: j, to }] }, edge: id, trunk: e.id, merged: true };
 }
 
 /**
- * Several links in one change, in order (a node target links, an edge target merges). A link an
+ * Several links in one change, in order (node→node, node→edge merge, edge→node fork). A link an
  * earlier one made impossible, or one that was never possible, is skipped with its reason.
  */
-export function linkEach(doc: FlowDoc, links: { from: string; to: { type: 'node' | 'edge'; id: string } }[]): { doc: FlowDoc; made: number; problems: string[] } {
+export function linkEach(doc: FlowDoc, links: { from: string; fromType?: 'node' | 'edge'; to: { type: 'node' | 'edge'; id: string } }[]): { doc: FlowDoc; made: number; problems: string[] } {
   let d = doc;
   let made = 0;
   const problems: string[] = [];
   for (const l of links) {
-    const r = l.to.type === 'node' ? linkNodes(d, l.from, l.to.id) : linkToEdge(d, l.from, l.to.id);
+    const r = l.fromType === 'edge' ? (l.to.type === 'node' ? linkFromEdge(d, l.from, l.to.id) : { error: 'Link an edge to a node' }) : l.to.type === 'node' ? linkNodes(d, l.from, l.to.id) : linkToEdge(d, l.from, l.to.id);
     if ('error' in r) problems.push(r.error);
     else {
       d = r.doc;
@@ -613,20 +661,22 @@ export function linkEach(doc: FlowDoc, links: { from: string; to: { type: 'node'
 }
 
 /**
- * Puts a new node in the middle of an edge: from → new → to. The first half keeps the edge's id,
- * label and loop hint, so a merge's trunk keeps its shared label. The node joins the deepest group
- * holding both ends.
+ * Puts a new node in the middle of an edge: from → new → to. The first half keeps its id, label
+ * and loop hint, except an incoming fork trunk keeps them on the junction-side half so its label
+ * stays shared. The node joins the deepest group holding the connection's ends.
  */
 export function splitEdge(doc: FlowDoc, edgeId: string, text = ''): { doc: FlowDoc; id: string } | null {
   const e = edgeById(doc, edgeId);
   if (!e) return null;
-  const ends = [e.from, e.to].filter((x) => !isJunction(doc, x)).map((x) => nodeById(doc, x)?.group ?? null);
-  const group = commonGroup(doc, ends);
+  const c = connectionOf(doc, edgeId);
+  const group = c ? commonGroup(doc, [...c.inputs, ...c.outputs].map((x) => nodeById(doc, x)?.group ?? null)) : null;
   const id = uid('n');
   const node: FlowNode = { id, text };
   if (group) node.group = group;
-  const second: FlowEdge = { id: uid('e'), from: id, to: e.to };
-  const edges = doc.edges.flatMap((x) => (x === e ? [{ ...x, to: id }, second] : [x]));
+  const forkTrunk = c?.kind === 'fork' && c.trunk.id === e.id;
+  const first: FlowEdge = forkTrunk ? { id: uid('e'), from: e.from, to: id } : { ...e, to: id };
+  const second: FlowEdge = forkTrunk ? { ...e, from: id } : { id: uid('e'), from: id, to: e.to };
+  const edges = doc.edges.flatMap((x) => (x === e ? [first, second] : [x]));
   return { doc: { ...doc, nodes: [...doc.nodes, node], edges }, id };
 }
 
@@ -636,8 +686,8 @@ export function splitEdge(doc: FlowDoc, edgeId: string, text = ''): { doc: FlowD
  */
 export function addCause(doc: FlowDoc, edgeId: string, text = ''): { doc: FlowDoc; id: string } | null {
   const c = connectionOf(doc, edgeId);
-  if (!c) return null;
-  const ends = [...c.inputs, c.target].map((x) => nodeById(doc, x)?.group ?? null);
+  if (!c || c.kind === 'fork') return null;
+  const ends = [...c.inputs, ...c.outputs].map((x) => nodeById(doc, x)?.group ?? null);
   const group = commonGroup(doc, ends);
   const id = uid('n');
   const node: FlowNode = { id, text };
@@ -646,17 +696,28 @@ export function addCause(doc: FlowDoc, edgeId: string, text = ''): { doc: FlowDo
   return 'doc' in r && r.doc ? { doc: r.doc, id } : null;
 }
 
+/** Adds a new effect sharing the selected edge's trunk and label, in its common group. */
+export function addEffect(doc: FlowDoc, edgeId: string, text = ''): { doc: FlowDoc; id: string } | null {
+  const c = connectionOf(doc, edgeId);
+  if (!c || c.kind === 'merge') return null;
+  const group = commonGroup(doc, [...c.inputs, ...c.outputs].map((x) => nodeById(doc, x)?.group ?? null));
+  const { doc: next, id } = addNode(doc, text, group);
+  const r = linkFromEdge(next, edgeId, id);
+  return 'doc' in r ? { doc: r.doc, id } : null;
+}
+
 /**
  * Removes a node; when it had exactly one cause and one effect, joins them again, keeping the
- * incoming edge's id and label (the inverse of splitting an edge). Otherwise like deleteItems,
- * which is also what happens between two merges (a merge's trunk cannot run into another merge).
+ * incoming edge's id and label, except an outgoing fork trunk retains its shared id and label
+ * (the inverse of splitEdge). Otherwise like deleteItems; joining two junctions is unsupported.
  */
 export function dissolveNode(doc: FlowDoc, id: string): FlowDoc {
   const ins = doc.edges.filter((e) => e.to === id);
   const outs = doc.edges.filter((e) => e.from === id);
   if (ins.length === 1 && outs.length === 1 && !(isJunction(doc, ins[0].from) && isJunction(doc, outs[0].to))) {
     const [a, b] = [ins[0], outs[0]];
-    const joined: FlowEdge = { ...a, to: b.to };
+    const c = connectionOf(doc, b.id);
+    const joined: FlowEdge = c?.kind === 'fork' && c.trunk.id === b.id ? { ...b, from: a.from, ...(a.back || b.back ? { back: true } : {}) } : { ...a, to: b.to };
     const dup = a.from === b.to || doc.edges.some((e) => e.from === a.from && e.to === b.to);
     const edges = doc.edges.flatMap((e) => (e === a ? (dup ? [] : [joined]) : e === b ? [] : [e]));
     return tidyJunctions({ ...doc, nodes: doc.nodes.filter((n) => n.id !== id), edges });
@@ -664,7 +725,7 @@ export function dissolveNode(doc: FlowDoc, id: string): FlowDoc {
   return deleteItems(doc, [id]).doc;
 }
 
-/** Sets an edge's label; a branch sets its merge's shared label. Empty text removes it. */
+/** Sets an edge's label; a branch sets its connection's shared label. Empty text removes it. */
 export function setEdgeLabel(doc: FlowDoc, edgeId: string, text: string): FlowDoc {
   const c = connectionOf(doc, edgeId);
   if (!c) return doc;

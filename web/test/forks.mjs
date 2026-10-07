@@ -5,7 +5,7 @@ import { chromium, firefox, webkit } from "playwright";
 const bundle = await readFile(process.env.LF_BUNDLE || new URL("../dist/lode-flow.iife.js", import.meta.url));
 const server = createServer((req, res) => {
   res.setHeader("content-type", req.url === "/bundle.js" ? "text/javascript" : "text/html");
-  res.end(req.url === "/bundle.js" ? bundle : '<style>body{margin:0}lode-flow{height:100vh}</style><script src="/bundle.js"><\/script><lode-flow theme="blueprint"></lode-flow>');
+  res.end(req.url === "/bundle.js" ? bundle : '<!doctype html><style>body{margin:0}lode-flow{height:100vh}</style><script src="/bundle.js"><\/script><lode-flow theme="blueprint"></lode-flow>');
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const url = `http://127.0.0.1:${server.address().port}`;

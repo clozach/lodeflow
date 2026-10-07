@@ -182,7 +182,12 @@ try {
         await page.goto(url); await ready(page); assert.equal(countItems(await docOf(page)), 0); assert.match(await page.locator('#notice').textContent(), /could not be read/); await start(page);
         await select(page, (await docOf(page)).nodes[0].id); await page.keyboard.press('Enter'); await page.locator('textarea.ed').fill('Pending draft');
         await help(page); await page.locator('#hard-reset').scrollIntoViewIfNeeded();
-        await page.evaluate(() => { localStorage.setItem('lodeflow:another-diagram:history', 'Untouched history'); Storage.prototype.setItem = () => { throw new DOMException('Full', 'QuotaExceededError'); }; });
+        // Inject quota failure at the reset click boundary. Before that click, a pending autosave
+        // legitimately reclaims other histories, so poisoning storage earlier races this assertion.
+        await page.evaluate(() => document.querySelector('#hard-reset').addEventListener('click', () => {
+          localStorage.setItem('lodeflow:another-diagram:history', 'Untouched history');
+          Storage.prototype.setItem = () => { throw new DOMException('Full', 'QuotaExceededError'); };
+        }, { capture: true, once: true }));
         await page.locator('#hard-reset').click(); assert.equal(countItems(await docOf(page)), 0); assert.match(await page.locator('#save-status').textContent(), /Session only/);
         assert.equal(await page.evaluate(() => localStorage.getItem('lodeflow:another-diagram:history')), 'Untouched history');
         await page.evaluate(() => { Storage.prototype.getItem = () => { throw new DOMException('Blocked', 'SecurityError'); }; });

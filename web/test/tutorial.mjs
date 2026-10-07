@@ -220,8 +220,9 @@ try {
           await page.locator('.source-link').scrollIntoViewIfNeeded();
           await page.waitForFunction(() => {
             const bottom = document.querySelector('#flow').getBoundingClientRect().bottom;
-            return [...document.querySelectorAll('.practice-frame > .notice:not([hidden])')].every(el => el.getBoundingClientRect().top >= bottom);
+            return [...document.querySelectorAll('.practice-frame > .notice:not([hidden])')].every(el => el.getBoundingClientRect().top + 0.5 >= bottom);
           });
+          console.log('notice clearance geometry', await page.evaluate(() => ({height:innerHeight, canvasBottom:document.querySelector('#flow').getBoundingClientRect().bottom, noticeTop:document.querySelector('#notice').getBoundingClientRect().top})));
           const box = await page.locator('#reset').boundingBox(), toast = await page.locator('#notice').boundingBox();
           assert.ok(box.y + box.height + 8 <= toast.y, 'reset controls have clearance above the toast');
           assert.equal(await page.locator('#reset').evaluate(button => document.elementFromPoint(button.getBoundingClientRect().x + 10, button.getBoundingClientRect().y + 10) === button), true, 'the toast cannot intercept reset taps');

@@ -5,7 +5,7 @@ const s = (body: string) =>
 
 export const ICON = {
   edit: s('<path d="M10.5 2.5l3 3L6 13H3v-3z"/><path d="M9 4l3 3"/>'),
-  node: s('<rect x="4.5" y="4.5" width="7" height="7" rx="1.8"/>'),
+  node: s('<rect x="1" y="4.5" width="14" height="7" rx="1.8"/>'),
   dive: s('<rect x="1.5" y="1.5" width="13" height="13" rx="3" stroke-dasharray="2.5 2"/><path d="M8 3.8v6.4M5.6 7.9L8 10.3l2.4-2.4"/>'),
   surface: s('<rect x="1.5" y="1.5" width="13" height="13" rx="3" stroke-dasharray="2.5 2"/><path d="M8 12.2V5.8M5.6 8.1L8 5.7l2.4 2.4"/>'),
   before:s('<rect x="8.5" y="5" width="6" height="6" rx="1.5"/><path d="M1.5 8H8M5.5 5.5L8 8l-2.5 2.5"/>'),

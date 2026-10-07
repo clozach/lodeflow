@@ -130,6 +130,8 @@ svg.layer { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overfl
   cursor: pointer; transform-origin: 50% 50%;
 }
 .node:hover { border-color: color-mix(in srgb, var(--lf-accent) 45%, var(--lf-node-border)); }
+.node.action:focus-visible { outline: 2px solid var(--lf-focus); outline-offset: 4px; }
+.node.action { touch-action: manipulation; text-align: inherit; appearance: none; }
 .node.sel { border-color: var(--lf-accent); }
 /* Paint rings separately: a consumer's shadow value of "none" is valid on its own,
    but would invalidate a comma-separated shadow list containing the selection ring. */
@@ -194,7 +196,7 @@ textarea.ed::placeholder { color: var(--lf-muted); font-style: italic; }
   font: 500 14px/1.5 var(--lf-ui-font); color: var(--lf-muted); text-align: center; padding: 24px;
 }
 .empty[hidden] { display: none; }
-.empty kbd, .ui kbd {
+.ui kbd {
   font: 500 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--lf-muted);
   border: 1px solid var(--lf-ui-border); border-bottom-width: 2px; border-radius: 4px; padding: 2px 4px; background: transparent;
 }
@@ -208,6 +210,9 @@ textarea.ed::placeholder { color: var(--lf-muted); font-style: italic; }
 }
 .ui[hidden] { display: none; }
 .bar { display: flex; flex-wrap: wrap; gap: 2px; padding: 4px; }
+.puck .bar { flex-wrap: nowrap; align-items: flex-start; }
+.puck-actions { display: flex; flex-wrap: wrap; gap: 2px; min-width: 0; }
+.puck .help-toggle { flex: none; margin-left: auto; font-weight: 600; }
 .mb {
   display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 5px 9px;
   border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; cursor: pointer;
@@ -297,8 +302,10 @@ textarea.ed::placeholder { color: var(--lf-muted); font-style: italic; }
 .lk-none { padding: 10px 8px; color: var(--lf-muted); }
 .lk-foot { padding: 2px 6px 2px; font-size: 11.5px; color: var(--lf-muted); }
 /* way back */
-.wayback { display: flex; align-items: center; gap: 4px; padding: 4px 4px 4px 12px; max-width: 320px; }
-.wayback .msg { flex: 1; overflow-wrap: anywhere; }
+.vp.touch ~ .ui kbd, .vp.touch ~ .ui .keys, .vp.touch ~ .ui .key-hint { display: none; }
+@media (any-pointer: coarse) {
+  .ui kbd, .ui .keys, .ui .key-hint { display: none; }
+}
 /* help */
 .help { width: min(560px, calc(100% - 24px)); max-height: calc(100% - 24px); overflow: auto; padding: 14px 16px; }
 .help h2 { margin: 0 0 8px; font: 600 15px/1.3 var(--lf-ui-font); display: flex; justify-content: space-between; align-items: center; }
@@ -312,5 +319,19 @@ textarea.ed::placeholder { color: var(--lf-muted); font-style: italic; }
 .nudge { position: absolute; z-index: 6; padding: 6px 10px; pointer-events: none; font: 500 12px/1.3 var(--lf-ui-font);
   background: var(--lf-ui-bg); border: 1px solid var(--lf-ui-border); border-radius: 8px; box-shadow: var(--lf-ui-shadow); }
 .nudge[hidden] { display: none; }
+/* A graph embed borrows only the layout and drawing; its host owns actions and scrolling. */
+:host([presentation="graph"]) { min-height: 0; }
+:host([presentation="graph"]) .vp { background: transparent; touch-action: pan-x pan-y; }
+:host([presentation="graph"]) .ui,
+:host([presentation="graph"]) .ring,
+:host([presentation="graph"]) .chev,
+:host([presentation="graph"]) .nudge,
+:host([presentation="graph"]) .marquee { display: none !important; }
+:host([presentation="graph"]) .node:not(.action),
+:host([presentation="graph"]) .gbox,
+:host([presentation="graph"]) .carrier { cursor: default; }
+:host([presentation="graph"]) .node:not(.action):hover { border-color: var(--lf-node-border); }
+:host([presentation="graph"]) .node:not(.action).sel:hover { border-color: var(--lf-accent); }
+:host([presentation="graph"]) .gbox:hover { stroke-width: 1.25; }
 @media (prefers-reduced-motion: reduce) { .sw .track, .sw .track::after { transition: none; } }
 `;

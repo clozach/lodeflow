@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, firefox, webkit } from 'playwright';
-import { countItems, seed, storageKey } from '../../site/tutorial.mjs';
+import { appearanceKey, countItems, seed, storageKey } from '../../site/tutorial.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../site/dist');
 const key = `lodeflow:${storageKey}`;
@@ -26,10 +26,17 @@ await new Promise((done) => server.listen(0, '127.0.0.1', done));
 const url = `http://127.0.0.1:${server.address().port}/lodeflow/`;
 const docOf = (page) => page.evaluate(() => document.querySelector('lode-flow').doc);
 const ready = async (page, empty = false) => {
-  await page.waitForFunction((empty) => (empty || document.querySelector('lode-flow')?.layoutInfo) && document.querySelector('#step-list').children.length === 6, empty);
+  await page.waitForFunction((empty) => (empty || document.querySelector('lode-flow')?.layoutInfo) && document.body.dataset.ready === 'true', empty);
   await page.waitForTimeout(300);
 };
-const step = (page, index) => page.getByRole('button', { name: `Step ${index}:`, exact: false }).click();
+const select = (page, id) => page.locator('lode-flow').evaluate((flow, id) => {
+  flow.select([id]); flow.showSelection(); flow.focus();
+}, id);
+const undo = async (page, redo = false) => {
+  await page.locator('lode-flow').evaluate((flow) => flow.focus());
+  const modifier = await page.evaluate(() => /Mac/.test(navigator.platform) ? 'Meta' : 'Control');
+  await page.keyboard.press(`${modifier}+${redo ? 'Shift+' : ''}z`);
+};
 const edit = async (page, text) => {
   await page.keyboard.press('Enter');
   await page.locator('textarea.ed').fill(text);
@@ -59,12 +66,15 @@ try {
   for (const [name, engine] of Object.entries(engines).filter(([name]) => !selected || selected.includes(name.toLowerCase()))) {
     const browser = await engine.launch();
     try {
-      await scenario(browser, `${name}: tutorial, real edits and links, themes, saved undo and reset`, async (page) => {
+      await scenario(browser, `${name}: minimal editor, real edits and links, themes, saved undo and restore`, async (page) => {
         await page.goto(url);
         await ready(page);
         assert.equal(countItems(await docOf(page)), 15);
         assert.equal(await page.locator('#appearance').inputValue(), 'light');
         assert.equal(await page.locator('#item-count').textContent(), '15 / 100 items');
+        assert.equal(await page.locator('.intro, aside, footer, #mobile-gesture, #step-list, #undo, #redo, #fit').count(), 0, 'host tutorial and duplicate controls are gone');
+        const frame = await page.locator('.canvas-frame').boundingBox();
+        assert.ok(frame.width > 1200 && frame.height > 600, 'the editor uses the desktop viewport');
         const firstFrame = await page.locator('lode-flow').evaluate((flow) => {
           const frame = flow.getBoundingClientRect();
           return [...flow.shadowRoot.querySelectorAll('.node[data-id]')].map((node) => {
@@ -75,7 +85,7 @@ try {
         assert.ok(firstFrame.every((node) => node.inside && node.textSize >= 11), 'every seed node fits and remains readable');
         const editRequests = [];
         page.on('request', (request) => editRequests.push(request.url()));
-        await step(page, 2);
+        await select(page, 'rename');
         assert.deepEqual(await page.evaluate(() => document.querySelector('lode-flow').selection), ['rename']);
         await edit(page, 'My first idea');
         assert.equal((await docOf(page)).nodes.find((node) => node.id === 'rename').text, 'My first idea');
@@ -84,21 +94,21 @@ try {
         await page.reload();
         await ready(page);
         assert.equal((await docOf(page)).nodes.find((node) => node.id === 'rename').text, 'My first idea');
-        await page.locator('#undo').click();
+        await undo(page);
         assert.equal((await docOf(page)).nodes.find((node) => node.id === 'rename').text, 'Rename this idea', 'undo survives reload');
-        await page.locator('#redo').click();
-        await step(page, 3);
+        await undo(page, true);
+        await select(page, 'grow');
         await page.keyboard.press('n');
         await page.locator('textarea.ed').fill('A next step');
         await page.keyboard.press('Enter');
         assert.equal(countItems(await docOf(page)), 17, 'a node and its arrow both count');
-        await step(page, 4);
+        await select(page, 'extra');
         await page.keyboard.press('e');
         await page.locator('.lk-filter').fill('A useful outcome');
         await page.keyboard.press('Enter');
         await page.keyboard.press('Escape');
         assert.ok((await docOf(page)).edges.some((edge) => edge.from === 'extra' && edge.to === 'outcome'));
-        await step(page, 5);
+        await select(page, 'practice');
         await page.keyboard.press('c');
         assert.equal((await docOf(page)).groups.find((group) => group.id === 'practice').collapsed, true);
         await page.keyboard.press('c');
@@ -108,7 +118,7 @@ try {
         const beforeReset = await docOf(page);
         await page.locator('#reset').click();
         assert.equal(countItems(await docOf(page)), 15);
-        await page.locator('#undo').click();
+        await undo(page);
         assert.deepEqual(await docOf(page), beforeReset, 'restoring tutorial is one undoable change');
         await waitSaved(page, 'A next step');
         await page.reload();
@@ -145,13 +155,88 @@ try {
         assert.equal((await docOf(page)).nodes.find((node) => node.id === 'n0').text, 'Editable at the limit');
       });
 
+      await scenario(browser, `${name}: Hard Reset discards drafts and history, resets appearance, and only clears its own storage`, async (page) => {
+        await page.goto(url);
+        await ready(page);
+        const baseline = await docOf(page);
+        const unrelated = { 'another-app:notes': 'Private notes', 'lodeflow:another-diagram': 'Other diagram', 'lodeflow:another-diagram:history': 'Other history' };
+        await page.evaluate((unrelated) => { for (const [key, value] of Object.entries(unrelated)) localStorage.setItem(key, value); }, unrelated);
+        await select(page, 'rename');
+        await edit(page, 'An edit to erase');
+        await waitSaved(page, 'An edit to erase');
+        await page.locator('#appearance').selectOption('blueprint');
+        await page.evaluate(() => {
+          window.removedKeys = [];
+          const remove = Storage.prototype.removeItem;
+          Storage.prototype.removeItem = function (key) { window.removedKeys.push(key); return remove.call(this, key); };
+        });
+        await select(page, 'rename');
+        await page.keyboard.press('Enter');
+        await page.locator('textarea.ed').fill('Unfinished draft to erase');
+        assert.equal(await page.locator('#hard-reset').getAttribute('title'), 'All data storage is local-only. Clicking this button resets the tutorial and deletes all your edits. ⚠️ Cannot be undone.');
+        await page.locator('#hard-reset').click();
+        await ready(page);
+        assert.deepEqual(await docOf(page), baseline);
+        assert.equal(await page.locator('textarea.ed').count(), 0, 'in-progress edit is discarded');
+        assert.equal(await page.locator('lode-flow').evaluate((flow) => flow.canUndo || flow.canRedo), false, 'history cannot restore erased edits');
+        assert.equal(await page.locator('#appearance').inputValue(), 'light');
+        const storage = await page.evaluate(({ key, appearanceKey, unrelated }) => ({
+          removed: window.removedKeys,
+          appearance: localStorage.getItem(appearanceKey), history: localStorage.getItem(`${key}:history`),
+          baseline: JSON.parse(localStorage.getItem(key)),
+          unrelated: Object.fromEntries(Object.keys(unrelated).map((key) => [key, localStorage.getItem(key)])),
+        }), { key, appearanceKey, unrelated });
+        assert.deepEqual(storage.removed, [key, `${key}:history`, appearanceKey]);
+        assert.equal(storage.appearance, null);
+        assert.equal(storage.history, null);
+        assert.deepEqual(storage.unrelated, unrelated);
+        assert.deepEqual(storage.baseline.doc, baseline);
+        assert.equal(storage.baseline.history.entries.length, 0);
+        assert.equal(JSON.stringify(storage.baseline).includes('erase'), false);
+        await page.reload();
+        await ready(page);
+        assert.deepEqual(await docOf(page), baseline);
+        await undo(page);
+        assert.deepEqual(await docOf(page), baseline, 'reload and Undo cannot bring back erased edits');
+        await select(page, 'rename');
+        await edit(page, 'An edit retained in blocked storage');
+        await waitSaved(page, 'An edit retained in blocked storage');
+        await page.evaluate(() => {
+          Storage.prototype.removeItem = () => { throw new DOMException('Blocked', 'SecurityError'); };
+        });
+        await page.locator('#hard-reset').click();
+        await ready(page);
+        assert.deepEqual(await docOf(page), baseline, 'blocked deletion still resets this session');
+        assert.equal(await page.locator('lode-flow').evaluate((flow) => flow.canUndo || flow.canRedo), false);
+        assert.match(await page.locator('#save-status').textContent(), /Session only/);
+        assert.match(await page.evaluate((key) => localStorage.getItem(key), key), /retained in blocked storage/, 'failed deletion keeps the prior saved value');
+      });
+
+      await scenario(browser, `${name}: Hard Reset with full storage leaves unrelated diagram history untouched`, async (page) => {
+        await page.addInitScript(() => {
+          localStorage.setItem('lodeflow:another-diagram:history', 'Untouched history');
+          Storage.prototype.setItem = () => { throw new DOMException('Full', 'QuotaExceededError'); };
+        });
+        await page.goto(url);
+        await ready(page);
+        await select(page, 'rename');
+        await page.keyboard.press('Enter');
+        await page.locator('textarea.ed').fill('Pending draft');
+        await page.locator('#hard-reset').click();
+        assert.equal(await page.evaluate(() => localStorage.getItem('lodeflow:another-diagram:history')), 'Untouched history');
+        assert.equal(countItems(await docOf(page)), 15);
+        assert.equal(await page.locator('lode-flow').evaluate((flow) => flow.canUndo), false);
+        assert.match(await page.locator('#save-status').textContent(), /Session only/);
+        assert.match(await page.locator('#notice').textContent(), /could not be saved/);
+      });
+
       await scenario(browser, `${name}: corrupt storage restores a usable tutorial`, async (page) => {
         await page.addInitScript(({ key }) => localStorage.setItem(key, '{ broken json'), { key });
         await page.goto(url);
         await ready(page);
         assert.equal(countItems(await docOf(page)), 15);
         assert.match(await page.locator('#notice').textContent(), /could not be read/);
-        await step(page, 2);
+        await select(page, 'rename');
         await edit(page, 'Recovered editor');
         assert.equal((await docOf(page)).nodes.find((node) => node.id === 'rename').text, 'Recovered editor');
       });
@@ -188,10 +273,10 @@ try {
         await page.goto(url);
         await ready(page);
         assert.match(await page.locator('#save-status').textContent(), /Session only/);
-        await step(page, 2);
+        await select(page, 'rename');
         await edit(page, 'Still editable');
         assert.equal((await docOf(page)).nodes.find((node) => node.id === 'rename').text, 'Still editable');
-        await page.locator('#undo').click();
+        await undo(page);
         assert.equal((await docOf(page)).nodes.find((node) => node.id === 'rename').text, 'Rename this idea');
         await page.reload();
         await ready(page);
@@ -204,10 +289,10 @@ try {
         const other = await context.newPage();
         await other.goto(url);
         await ready(other);
-        await step(page, 2);
+        await select(page, 'rename');
         await page.keyboard.press('Enter');
         await page.locator('textarea.ed').fill('Unfinished draft');
-        await step(other, 2);
+        await select(other, 'rename');
         await edit(other, 'Changed in another tab');
         await waitSaved(other, 'Changed in another tab');
         await page.locator('#tab-notice').waitFor({ state: 'visible' });
@@ -215,27 +300,28 @@ try {
         await page.keyboard.press('Enter');
         await page.locator('#load-saved').click();
         assert.equal((await docOf(page)).nodes.find((node) => node.id === 'rename').text, 'Changed in another tab');
-        await page.locator('#undo').click();
+        await undo(page);
         assert.equal((await docOf(page)).nodes.find((node) => node.id === 'rename').text, 'Unfinished draft');
       });
 
-      await scenario(browser, `${name}: phone width, touch controls and tutorial instructions stay usable`, async (page) => {
+      await scenario(browser, `${name}: phone width and touch controls stay usable without keyboard hints`, async (page) => {
         await page.goto(url);
         await ready(page);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'no horizontal page overflow');
-        await step(page, 4);
+        await select(page, 'extra');
         await page.waitForTimeout(400);
         const selectedVisible = await page.locator('lode-flow').evaluate((flow) => {
           const node = flow.shadowRoot.querySelector('.node[data-id="extra"]').getBoundingClientRect();
           const frame = flow.getBoundingClientRect();
           return node.left >= frame.left && node.right <= frame.right && node.top >= frame.top && node.bottom <= frame.bottom;
         });
-        assert.equal(selectedVisible, true, 'guide brings its example into the phone viewport');
+        assert.equal(selectedVisible, true, 'Show brings the selected node into the phone viewport');
         await page.locator('.node-magnet [data-act="link"]').tap();
         await page.locator('.lk-list li').filter({ hasText: 'A useful outcome' }).first().tap();
         assert.ok((await docOf(page)).edges.some((edge) => edge.from === 'extra' && edge.to === 'outcome'));
         await page.locator('[data-act="close-linker"]').tap();
-        assert.match(await page.locator('#mobile-gesture').textContent(), /Join two ideas/);
+        const keyHints = await page.locator('lode-flow').evaluate((flow) => [...flow.shadowRoot.querySelectorAll('kbd')].filter((hint) => hint.getClientRects().length && getComputedStyle(hint).display !== 'none').length);
+        assert.equal(keyHints, 0, 'touch hides inline keyboard hints');
         await page.locator('#appearance').selectOption('blueprint');
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       }, { viewport: { width: 390, height: 844 }, hasTouch: true });

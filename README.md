@@ -6,7 +6,7 @@ You never place anything by hand. The diagram re-lays itself out after every edi
 
 [Try the live tutorial](https://clozach.github.io/lodeflow/) · [Source on GitHub](https://github.com/clozach/lodeflow)
 
-The tutorial starts with a connected example and six lessons for editing, adding nodes, linking, groups, layout and undo. Choose **Blueprint** from the appearance menu for the built-in alternate style. The demo allows at most **100 items total** (nodes, edges, groups and junctions). It saves the diagram and undo history only in this browser's localStorage; there is no account, server-side diagram storage or analytics. **Restore tutorial** is undoable. If browser storage is blocked or full, editing and undo still work for the current session.
+The demo starts with a connected example ready to edit. Use **Add node** and the **?** button in the floating menu; Layout appears once a node exists, and Undo appears when there is a change to take back. Choose **Blueprint** from Style for the built-in alternate appearance. Keyboard hints are omitted on touch interfaces. The demo allows at most **100 items total** (nodes, edges, groups and junctions) and saves the diagram and undo history only in this browser's localStorage. **Restore tutorial** is undoable. **Hard Reset** restores the seed and deletes this demo's edits, history and appearance preference; it cannot be undone. If browser storage is blocked or full, editing and undo still work for the current session.
 
 ## Compared with other tools
 
@@ -76,7 +76,7 @@ Three options sit on top of the rules, the first two on by default:
 
 - **Link two nodes**: drag from one node to another with a mouse, or select a node and press `E` (or *Link* on its controls) for a list of every node, then every edge, each nearest-to-furthest. Type to filter; `↑` `↓` choose; `↵` links; the list stays open (with a receipt and *Undo*) so you can link again; `Esc` closes it. To link several at once, check rows first: `⌘`/`Ctrl`-click (or a click on a row's box, which touch can use) checks one more, `⇧`-click checks every row between it and the last one checked, `⌘↵`/`Ctrl+Enter` and `⇧↓`/`⇧↑` do the same from the keys; a bar then reads *N checked · Link ↵ · Uncheck*, and `↵` or a click on another row links them all (plus that row) in one undo step. `⇧E` (or ⇧-click on *Link*) turns the list around: pick a node to link *into* the selected one (nodes only, leaving out those already linked into it). On touch the list is the way to link: one-finger drags always pan.
 - **Merge into an edge**: drop a link on an edge (or pick an edge in the list). The node joins it as another cause: the causes' edges (*branches*) meet at a *junction* and continue as one *trunk* with one shared label. The trunk keeps the original edge's id and label.
-- **Edges are selectable**: click on or near one (within 12 px with a mouse, 22 px by touch; a line inside a group box wins over the box) (or `S` / `⇧S`, or *Select edge* on a node's or an edge's controls, ⇧-click for back, to step forward / back through the selected node's edges). `S` walks their drawn directions clockwise on screen from 12 o'clock; `⇧S` walks that order backwards. Click again or press `↵` to write its label; a branch edits its merge's shared label. `⌫` deletes it with a way back; deleting a merge's trunk deletes the merge, deleting one branch leaves the rest (a junction left with one cause dissolves back into a plain edge, label kept).
+- **Edges are selectable**: click on or near one (within 12 px with a mouse, 22 px by touch; a line inside a group box wins over the box) (or `S` / `⇧S`, or *Select edge* on a node's or an edge's controls, ⇧-click for back, to step forward / back through the selected node's edges). `S` walks their drawn directions clockwise on screen from 12 o'clock; `⇧S` walks that order backwards. Click again or press `↵` to write its label; a branch edits its merge's shared label. `⌫` deletes it; Undo in the diagram toolbar restores it. Deleting a merge's trunk deletes the merge, deleting one branch leaves the rest (a junction left with one cause dissolves back into a plain edge, label kept).
 - **Insert a node into an edge**: select the edge and press `N` (or *Insert node* on its controls). The edge becomes two with a new node between them, ready for its text; the first half keeps the edge's id and label. Leaving the new node empty (`↵`, `Esc` or a click away) rejoins the edge. `⇧N` (or *Add cause*) adds a new node that joins the edge as another cause of its effect, a merge, ready for its text.
 - **Remove a label, keep the edge**: select a labelled edge and press `⇧⌫` (or *Remove label*). For a merge's branch it removes the merge's shared label.
 - Links you cannot make are refused where you try them, with the reason: a node to itself, a link that already exists, a node onto an edge it is already part of or points into, or a merge that would duplicate a direct link to the same effect.
@@ -129,6 +129,8 @@ Missing ids are generated. Edges that point at nothing, duplicates and self-loop
 | `node-width` | text width in px (default 176) |
 | `fit-min` | smallest zoom fitting may use before the view starts at the flow's beginning and scrolls instead: `0.6` or `60%` (default `0.7`; radial never above `0.35`). Set it for your readers: lower on a page read mostly on phones, higher on a kiosk read from across the room. A viewer's own change in *All values* wins while their `storage-key` state lasts |
 | `readonly` | no content changes; selecting, panning, zooming and their undo still work |
+| `presentation` | `editor` (default) · `graph`: transparent drawing with no frame ring, controls, editing, camera gestures or browser-storage writes; the host sets content and highlights |
+| `node-activation` | `edit` (default) · `event`: a node click, Enter or Space emits `lode-activate` for the host instead of editing; nodes become keyboard-focusable buttons with an outline |
 | `storage-key` | keep content **and undo history** in localStorage: the document under `lodeflow:<key>`, the history under `lodeflow:<key>:history` (trimmed to fit when the store is nearly full). If even the document cannot be saved, the *Layout* pill shows *Not saved* and `lode-save` fires |
 | `theme` | `light` · `dark` · `blueprint`; omitted follows the browser's light/dark preference. Blueprint is a built-in drafting grid with flat blue nodes, monospace text, yellow selection and cyan keyboard focus |
 | `max-items` | optional non-negative integer, e.g. `100`; combined nodes + edges + groups + junctions. Omitted (or invalid) is uncapped. Labels, selection and history steps do not add to the count |
@@ -136,7 +138,9 @@ Missing ids are generated. Edges that point at nothing, duplicates and self-loop
 | `wheel` | `auto` (scroll pans once the diagram has focus; the page is never trapped) · `always` (full-page apps: also captures touch from the first finger) · `modifier` (only ⌘/Ctrl-scroll zooms) |
 | `auto-orientations` | directions `auto` may choose from (default `lr tb`) |
 
-Properties and methods: `doc` (get/set), `setDoc(doc, { resetHistory })`, `selection` (node, group and edge ids), `select(ids)`, `showSelection()` (bring selected items into view, like Show or F; one undoable Pan), `focus(options?)` (give keys to the diagram after a host control selects an item), `itemCount`, `maxItems` (`null` when uncapped), `setAllGroupsCollapsed(collapsed, { fit? })`, `undo()`, `redo()`, `rewind()` and `fastForward()` (express: skipping camera moves, keeping the view), `canUndo`, `canRedo`, `fit()`, `camera`, `layoutInfo`, `getState()` / `setState()` (content + history + view, for your own persistence). `layoutInfo.timing` says where the last re-layout spent its time: `syncMs`, `measureMs`, `engineMs` (with `engineRuns`, and `engineReused` when an unchanged input reused the last result), `restMs`, `drawMs`, `totalMs`.
+Properties and methods: `doc` (get/set), `setDoc(doc, { resetHistory, discardPendingSave })`, `selection` (node, group and edge ids), `select(ids)`, `showSelection()` (bring selected items into view, like Show or F; one undoable Pan), `focus(options?)` (give keys to the diagram after a host control selects an item), `itemCount`, `maxItems` (`null` when uncapped), `setAllGroupsCollapsed(collapsed, { fit? })`, `undo()`, `redo()`, `rewind()` and `fastForward()` (express: skipping camera moves, keeping the view), `canUndo`, `canRedo`, `fit()`, `camera`, `layoutInfo`, `getState()` / `setState()` (content + history + view, for your own persistence). `layoutInfo.timing` says where the last re-layout spent its time: `syncMs`, `measureMs`, `engineMs` (with `engineRuns`, and `engineReused` when an unchanged input reused the last result), `restMs`, `drawMs`, `totalMs`.
+
+`setDoc` clears history by default; `{ resetHistory: false }` makes replacement one undoable Load. For an explicitly destructive host reset, `{ discardPendingSave: true }` cancels a queued save of the outgoing document and discards its active draft before replacement. It requires history reset and throws `TypeError` with `resetHistory: false`. It does not erase or write browser storage itself: the host owns that scope and the warning that the reset cannot be undone.
 
 With `max-items`, an addition is checked as a whole: a node plus its links, a split, a merge, a group or several links either fit or leave content, selection and history unchanged. Editing, removing items and undo/redo between valid states remain available at the limit. `setDoc` and `setState` throw `RangeError` before replacing anything when the document or any usable undo/redo snapshot exceeds the cap. An oversized saved document/history is left untouched and saving to that key is blocked until an explicit valid `setDoc`/`setState` (such as a demo reset); it is not silently truncated. Adding a lower cap to an already-open diagram preserves the content and permits changes that do not increase its item count; undo/redo cannot grow it past the cap. React exposes `theme`, `maxItems` and `onLimit` props.
 
@@ -147,6 +151,26 @@ By default, the group method keeps the current following/panning mode. Pass `{ f
 `fit()` recalculates the camera from the existing layout, obeying `fit-min`, and follows later layout changes. The *Fit* magnet control and `0` use that same method. Fitting after a pan does not require an unrelated content or attribute change, and one Undo returns to the panned view.
 
 Events (all bubble and cross the shadow boundary): `lode-change` `{doc, label}` · `lode-select` `{selection}` · `lode-history` `{canUndo, canRedo, undoLabel, redoLabel}` · `lode-layout` `{orientation, width, height, crossings, ms}` (`crossings` counts lines crossing lines in the layered layout; for the radial directions it is that layered count, lower than the crossings drawn once lines bend around the rings) · `lode-save` `{ok, problem}` (only with `storage-key`, when saving starts or stops failing) · `lode-limit` `{maxItems, itemCount, attemptedCount, message}` (a rejected content or state change).
+
+`lode-activate` carries `{ id, node, trigger: 'pointer' | 'keyboard' }` when `node-activation="event"`. Activation itself changes neither the diagram nor its selection; the host decides the action. Tab reaches the node buttons; arrow keys move between them in document order, Home/End reach the endpoints, and Enter/Space activates. The host can call `select([id])` to highlight the current choice; buttons expose that highlight as `aria-pressed`.
+
+For a navigation map above another diagram:
+
+```html
+<lode-flow id="map" presentation="graph" node-activation="event" orientation="lr"></lode-flow>
+<lode-flow id="detail"></lode-flow>
+<script>
+  const map = document.getElementById('map');
+  const diagram = document.getElementById('detail');
+  map.doc = timeline;
+  map.addEventListener('lode-activate', ({ detail: { id } }) => {
+    diagram.doc = diagrams[id];
+    map.select([id]);
+  });
+</script>
+```
+
+In graph presentation, `select()` changes only the highlight and emits `lode-select`; `fit()` refits without history. Undo/redo, express rewind/fast-forward and `showSelection()` do nothing. Host document/state loading remains available. Size the element to show the graph or put a wide element inside a page scroll container; graph presentation leaves wheel, touch and context-menu gestures to the page. Omit `node-activation` for a passive graph. React exposes `presentation`, `nodeActivation` and `onActivate` with the same behavior.
 
 Colours are CSS custom properties (`--lf-bg`, `--lf-node-bg`, `--lf-accent`, `--lf-edge`, `--lf-edge-back`, `--lf-group-bg`, …), with light and dark defaults; `theme="light|dark|blueprint"` forces one. The node font inherits from the page unless Blueprint is selected. Host CSS properties can override each built-in appearance.
 

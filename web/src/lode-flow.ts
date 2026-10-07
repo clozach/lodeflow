@@ -189,13 +189,6 @@ interface EditState {
   entry: Entry | null;
   ta: HTMLTextAreaElement;
 }
-interface WayBack {
-  entry: Entry;
-  message: string;
-  world: Pt;
-  anchor: string | null;
-  offset: Pt;
-}
 interface GroupEls {
   box: SVGPathElement;
   label: HTMLDivElement;
@@ -283,9 +276,16 @@ function kbd(s: string) {
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 const reducedMotion = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+/** A host action, independent of editing or selection. */
+export interface LodeFlowActivation {
+  id: string;
+  node: M.FlowNode;
+  trigger: 'pointer' | 'keyboard';
+}
+
 export class LodeFlowElement extends Base {
   static get observedAttributes() {
-    return ['orientation', 'bias', 'compactness', 'incremental', 'tight-groups', 'untangle', 'node-width', 'fit-min', 'readonly', 'storage-key', 'src', 'wheel', 'auto-orientations'];
+    return ['orientation', 'bias', 'compactness', 'incremental', 'tight-groups', 'untangle', 'node-width', 'fit-min', 'readonly', 'presentation', 'node-activation', 'storage-key', 'src', 'wheel', 'auto-orientations'];
   }
 
   // ----- state -----
@@ -331,7 +331,6 @@ export class LodeFlowElement extends Base {
   /** Screen boxes of floating controls placed earlier this frame, for later ones to keep clear of. */
   private uiRects: Rect[] = [];
   private magAt: Pt = { x: 0, y: 0 };
-  private wayBack: WayBack | null = null;
   private panel: null | { at: 'puck' | Pt } = null;
   private exhaustive = false;
   private helpOpen = false;
@@ -363,14 +362,13 @@ export class LodeFlowElement extends Base {
   private nodeMagBar!: HTMLDivElement;
   private puck!: HTMLDivElement;
   private panelEl!: HTMLDivElement;
-  private wayEl!: HTMLDivElement;
   private helpEl!: HTMLDivElement;
   private emptyEl!: HTMLDivElement;
   private ringEl!: HTMLDivElement;
   private marqueeEl!: HTMLDivElement;
   private nudgeEl!: HTMLDivElement;
   private live!: HTMLDivElement;
-  private nodeEls = new Map<string, HTMLDivElement>();
+  private nodeEls = new Map<string, HTMLElement>();
   private carrierEls = new Map<string, HTMLDivElement>();
   private linkLine!: SVGPathElement;
   private linkHead!: SVGPathElement;
@@ -424,6 +422,15 @@ export class LodeFlowElement extends Base {
   // Public API
   // =====================================================================
 
+  private get graphPresentation() { return this.getAttribute('presentation') === 'graph'; }
+  private get eventActivation() { return this.getAttribute('node-activation') === 'event'; }
+  private get touchContext() { return this.lastPointerType === 'touch' || (typeof matchMedia !== 'undefined' && matchMedia('(any-pointer: coarse)').matches); }
+
+  private activateNode(id: string, trigger: LodeFlowActivation['trigger']) {
+    const node = M.nodeById(this._doc, id);
+    if (node) this.emit('lode-activate', { id, node, trigger } satisfies LodeFlowActivation);
+  }
+
   /** The diagram document. Setting it replaces the content and clears history. */
   get doc(): FlowDoc {
     return this._doc;
@@ -433,11 +440,15 @@ export class LodeFlowElement extends Base {
     this.setDoc(d);
   }
 
-  setDoc(raw: unknown, opts: { resetHistory?: boolean } = {}) {
+  setDoc(raw: unknown, opts: { resetHistory?: true; discardPendingSave?: boolean } | { resetHistory: false; discardPendingSave?: never } = {}) {
+    if (opts.resetHistory === false && opts.discardPendingSave) throw new TypeError('discardPendingSave requires history reset');
     const doc = M.normalizeDoc(raw, this.attrSettings);
     this.requireWithinLimit(doc);
     // A save still waiting belongs to the document being replaced.
-    if (this.persistTimer) this.saveNow();
+    if (opts.discardPendingSave) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = 0;
+    } else if (this.persistTimer) this.saveNow();
     this.blockedStorageKey = null;
     this.diveOpened.clear();
     if (opts.resetHistory === false) {
@@ -445,12 +456,16 @@ export class LodeFlowElement extends Base {
       return;
     }
     this.finishEdit('discard');
+    // Abandoning a new node can schedule a save of the old document too.
+    if (opts.discardPendingSave) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = 0;
+    }
     this._doc = doc;
     this.view = { ...this.view, sel: this.view.sel.filter((id) => this.exists(id)), follow: true };
     // A new document chooses its own direction; the previous one's choice must not stick.
     this.autoPick = null;
     this.hist.clear();
-    this.wayBack = null;
     this.invalidate(true);
     this.emitHistory();
   }
@@ -459,7 +474,16 @@ export class LodeFlowElement extends Base {
     return [...this.view.sel];
   }
   select(ids: string[]) {
-    this.commit('Select', 'select', { view: { sel: ids.filter((id) => this.exists(id)) } });
+    const sel = ids.filter((id) => this.exists(id));
+    // A host can mark the current step of a graph without making editor history.
+    if (this.graphPresentation) {
+      this.view = { ...this.view, sel };
+      this.dirtySel = true;
+      this.schedule();
+      this.emit('lode-select', { selection: [...sel] });
+      return;
+    }
+    this.commit('Select', 'select', { view: { sel } });
   }
 
   /** Give keyboard gestures to the diagram after a host control selects an item. */
@@ -469,6 +493,7 @@ export class LodeFlowElement extends Base {
 
   /** Bring the selection into view, as the Show control / F key does, with one Pan step. */
   showSelection() {
+    if (this.graphPresentation) return;
     this.locateSelection();
   }
 
@@ -503,6 +528,7 @@ export class LodeFlowElement extends Base {
   }
 
   undo() {
+    if (this.graphPresentation) return;
     const ed = this.editing;
     const before = this.hist.index;
     this.finishEdit('save');
@@ -519,6 +545,7 @@ export class LodeFlowElement extends Base {
   }
 
   redo() {
+    if (this.graphPresentation) return;
     const ed = this.editing;
     const before = this.hist.index;
     this.finishEdit('save');
@@ -538,6 +565,7 @@ export class LodeFlowElement extends Base {
    * more of the diagram in view; ⌘Z then takes the change back and, after it, the zoom.
    */
   rewind() {
+    if (this.graphPresentation) return;
     const ed = this.editing;
     const before = this.hist.index;
     this.finishEdit('save');
@@ -552,6 +580,7 @@ export class LodeFlowElement extends Base {
 
   /** Express fast-forward (⇧⌥⌘Z): redoes the next change that is not a camera move, in the current view. */
   fastForward() {
+    if (this.graphPresentation) return;
     const ed = this.editing;
     const before = this.hist.index;
     this.finishEdit('save');
@@ -567,6 +596,13 @@ export class LodeFlowElement extends Base {
   /** Fit the whole diagram in view and follow it through later changes. */
   fit() {
     const cam = this.geo ? this.fitCamera(this.geo) : this.view.cam;
+    if (this.graphPresentation) {
+      this.view = { ...this.view, cam, follow: true };
+      this.camShown = { ...cam };
+      this.camFrom = null;
+      this.schedule();
+      return;
+    }
     this.commit('Fit to view', 'fit', { view: { cam, follow: true } });
   }
 
@@ -697,9 +733,21 @@ export class LodeFlowElement extends Base {
         break;
       }
       case 'readonly':
-        this.readonly_ = val !== null && val !== 'false';
+      case 'presentation':
+      case 'node-activation':
         this.finishEdit('save');
-        this.invalidate(false);
+        this.readAttributes();
+        if (this.graphPresentation) {
+          this.closePanel();
+          this.closeHelp();
+          this.closeLinker(false);
+          if (this.gesture?.longPress) clearTimeout(this.gesture.longPress);
+          this.gesture = null;
+          this.pointers.clear();
+          this.vp.classList.remove('panning', 'linking');
+          this.marqueeEl.hidden = true;
+        }
+        this.invalidate(true);
         break;
       case 'storage-key':
         // A save still waiting belongs to the old key and the document it was made on.
@@ -736,7 +784,9 @@ export class LodeFlowElement extends Base {
     if (this.hasAttribute('tight-groups')) s.tightGroups = this.getAttribute('tight-groups') !== 'false';
     if (this.hasAttribute('untangle')) s.untangle = this.getAttribute('untangle') !== 'false';
     this.attrSettings = s;
-    this.readonly_ = this.hasAttribute('readonly') && this.getAttribute('readonly') !== 'false';
+    this.readonly_ = this.graphPresentation || (this.hasAttribute('readonly') && this.getAttribute('readonly') !== 'false');
+    this.vp.tabIndex = this.graphPresentation ? -1 : 0;
+    this.vp.setAttribute('role', this.graphPresentation ? 'group' : 'application');
     this.storageKey = this.getAttribute('storage-key');
     const w = Number(this.getAttribute('node-width'));
     if (Number.isFinite(w) && w >= 60) this.tun.nodeWidth = w;
@@ -819,6 +869,7 @@ export class LodeFlowElement extends Base {
    * frames), and at once when the page is hidden or closed.
    */
   private persist() {
+    if (this.graphPresentation) return;
     if (!this.storageKey || this.blockedStorageKey === this.storageKey) return;
     clearTimeout(this.persistTimer);
     this.persistTimer = window.setTimeout(() => this.saveNow(), 250);
@@ -857,7 +908,7 @@ export class LodeFlowElement extends Base {
   private saveNow() {
     clearTimeout(this.persistTimer);
     this.persistTimer = 0;
-    if (!this.storageKey || this.blockedStorageKey === this.storageKey) return;
+    if (this.graphPresentation || !this.storageKey || this.blockedStorageKey === this.storageKey) return;
     const key = `lodeflow:${this.storageKey}`;
     const rev = Date.now();
     let problem: string | null = null;
@@ -972,8 +1023,6 @@ export class LodeFlowElement extends Base {
     this.puck = h('div', 'ui magnet puck', { role: 'toolbar', 'aria-label': 'Diagram' });
     this.panelEl = h('div', 'ui panel', { role: 'dialog', 'aria-label': 'Diagram layout' });
     this.panelEl.hidden = true;
-    this.wayEl = h('div', 'ui wayback', { role: 'status' });
-    this.wayEl.hidden = true;
     this.helpEl = h('div', 'ui help', { role: 'dialog', 'aria-label': 'Gestures and keys' });
     this.helpEl.hidden = true;
     this.nudgeEl = h('div', 'nudge');
@@ -986,7 +1035,7 @@ export class LodeFlowElement extends Base {
     this.linkerEl.addEventListener('pointermove', this.onShift);
     this.puck.addEventListener('pointermove', this.onShift);
 
-    this.root.append(this.vp, this.ringEl, this.nodeMag, this.wayEl, this.linkerEl, this.puck, this.panelEl, this.helpEl, this.nudgeEl, this.live);
+    this.root.append(this.vp, this.ringEl, this.nodeMag, this.linkerEl, this.puck, this.panelEl, this.helpEl, this.nudgeEl, this.live);
 
     // Events
     this.vp.addEventListener('pointerdown', (e) => this.onPointerDown(e));
@@ -995,6 +1044,12 @@ export class LodeFlowElement extends Base {
     this.vp.addEventListener('pointercancel', (e) => this.onPointerUp(e, true));
     this.vp.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
     this.vp.addEventListener('contextmenu', (e) => this.onContextMenu(e));
+    // Graph presentation keeps native page scrolling and button-like pointer activation.
+    this.vp.addEventListener('click', (e) => {
+      if (!this.graphPresentation || !this.eventActivation) return;
+      const id = (e.target as Element).closest('.node[data-id]')?.getAttribute('data-id');
+      if (id) this.activateNode(id, e.detail === 0 ? 'keyboard' : 'pointer');
+    });
     this.vp.addEventListener('focus', () => this.vp.classList.add('active'));
     this.root.addEventListener('focusin', this.syncRing);
     this.root.addEventListener('focusout', this.syncRing);
@@ -1008,8 +1063,20 @@ export class LodeFlowElement extends Base {
       this.vp.classList.remove('kbd');
       this.lastPointerType = (e as PointerEvent).pointerType;
     }, { capture: true });
+    this.root.addEventListener('pointerup', () => {
+      // Keep a first touch's target still until the press is released.
+      requestAnimationFrame(() => {
+        if (this.vp.classList.contains('touch') === this.touchContext) return;
+        this.vp.classList.toggle('touch', this.touchContext);
+        this.dirtySel = true;
+        this.puckKey = '';
+        this.magSizes = null;
+        if (this.helpOpen) this.openHelp();
+        this.schedule();
+      });
+    }, { capture: true });
     // Scrolling over a floating control still moves the diagram underneath it.
-    for (const ui of [this.nodeMag, this.puck, this.wayEl]) ui.addEventListener('wheel', (e) => this.onWheel(e as WheelEvent), { passive: false });
+    for (const ui of [this.nodeMag, this.puck]) ui.addEventListener('wheel', (e) => this.onWheel(e as WheelEvent), { passive: false });
     // Pressing a floating control keeps the keys where they were: Safari never focuses a clicked
     // button, so the press would drop focus onto the page and ⌫, ⌘Z and every other key would stop
     // reaching the diagram. (Tab still reaches the buttons; keepFocus handles a focused one.)
@@ -1018,7 +1085,7 @@ export class LodeFlowElement extends Base {
     this.vp.addEventListener('mousedown', (e) => {
       if ((e.target as Element).closest?.('.chev')) e.preventDefault();
     });
-    for (const ui of [this.nodeMag, this.puck, this.wayEl, this.panelEl])
+    for (const ui of [this.nodeMag, this.puck, this.panelEl])
       ui.addEventListener('mousedown', (e) => {
         const t = e.target as Element;
         const had = this.root.activeElement as HTMLElement | null;
@@ -1115,7 +1182,6 @@ export class LodeFlowElement extends Base {
       this.schedule();
     }
     const e = this.hist.push({ label, kind, before, after: this.snapshot(), t: Date.now(), where: opts.where ?? null }, opts.coalesce ?? 0);
-    if (kind !== 'delete') this.wayBack = null;
     if (docChanged) this.emit('lode-change', { doc: this._doc, label });
     if (selChanged) this.emit('lode-select', { selection: [...this.view.sel] });
     this.emitHistory();
@@ -1126,7 +1192,6 @@ export class LodeFlowElement extends Base {
   private restore(s: Snapshot, e: Entry) {
     const docChanged = s.doc !== this._doc;
     const selChanged = s.view.sel.join('\u0000') !== this.view.sel.join('\u0000');
-    this.wayBack = null;
     if (docChanged) {
       this._doc = s.doc;
       // A content transaction may also deliberately move the view (e.g. fold all and fit).
@@ -1315,7 +1380,10 @@ export class LodeFlowElement extends Base {
   private syncSelection() {
     this.dirtySel = false;
     const sel = new Set(this.view.sel);
-    for (const [id, el] of this.nodeEls) el.classList.toggle('sel', sel.has(id));
+    for (const [id, el] of this.nodeEls) {
+      el.classList.toggle('sel', sel.has(id));
+      if (this.eventActivation) el.setAttribute('aria-pressed', String(sel.has(id)));
+    }
     for (const [id, els] of this.groupEls) {
       const on = sel.has(id);
       els.box.classList.toggle('sel', on);
@@ -1338,8 +1406,18 @@ export class LodeFlowElement extends Base {
     for (const n of doc.nodes) {
       keepN.add(n.id);
       let el = this.nodeEls.get(n.id);
+      // Actions use native buttons; the editor keeps its existing canvas-owned focus model.
+      const action = this.eventActivation;
+      if (el && (el.tagName === 'BUTTON') !== action) {
+        const hadFocus = this.root.activeElement === el;
+        this.sizeRo?.unobserve(el);
+        el.remove();
+        this.nodeEls.delete(n.id);
+        el = undefined;
+        if (hadFocus && !this.graphPresentation) this.vp.focus({ preventScroll: true });
+      }
       if (!el) {
-        el = h('div', 'node', { 'data-id': n.id });
+        el = action ? h('button', 'node', { 'data-id': n.id, type: 'button' }) : h('div', 'node', { 'data-id': n.id });
         const t = h('div', 't', { 'data-ph': 'Type…' });
         el.append(t);
         el.style.opacity = '0';
@@ -1353,6 +1431,16 @@ export class LodeFlowElement extends Base {
       }
       el.classList.toggle('sel', sel.has(n.id));
       el.setAttribute('aria-label', n.text || 'Empty node');
+      el.classList.toggle('action', this.eventActivation);
+      if (this.eventActivation) {
+        el.setAttribute('role', 'button');
+        el.setAttribute('aria-pressed', String(sel.has(n.id)));
+        el.tabIndex = 0;
+      } else {
+        el.removeAttribute('role');
+        el.removeAttribute('aria-pressed');
+        el.removeAttribute('tabindex');
+      }
     }
     for (const [id, el] of this.nodeEls) {
       if (!keepN.has(id)) {
@@ -1495,13 +1583,8 @@ export class LodeFlowElement extends Base {
     // The list is rebuilt after the next layout (what it hides depends on the new one).
     if (this.linker && (this.readonly_ || !M.nodeById(doc, this.linker.source))) this.closeLinker(false);
     // Empty state / errors.
-    const empty = doc.nodes.length === 0 && doc.groups.length === 0;
-    this.emptyEl.hidden = !empty && !this.error;
+    this.emptyEl.hidden = !this.error;
     if (this.error) this.emptyEl.textContent = this.error;
-    else if (empty)
-      this.emptyEl.innerHTML = this.readonly_
-        ? 'Nothing to show yet.'
-        : `Double-click anywhere, or press ${kbd('N')}, to add the first node.<br>Press ${kbd('?')} for every gesture and key.`;
     this.nodeMagKey = '';
     this.puckKey = '';
   }
@@ -1796,7 +1879,7 @@ export class LodeFlowElement extends Base {
       if (this.error && !(this.blockedStorageKey && this.blockedStorageKey === this.storageKey)) {
         // A good layout after a failed one: the failure message goes.
         this.error = null;
-        this.emptyEl.hidden = this._doc.nodes.length > 0 || this._doc.groups.length > 0;
+        this.emptyEl.hidden = true;
       }
     } catch (err) {
       this.error = layoutFailure(err);
@@ -2170,31 +2253,6 @@ export class LodeFlowElement extends Base {
     return best;
   }
 
-  /** Nearest free spot to `c` for a w×h control (searches outward, never off-screen). */
-  private placeFree(c: Pt, w: number, hh: number): Pt {
-    const others = [...this.occupied(new Set()), ...this.uiRects.map((r) => ({ ...r, ui: true }))];
-    let best = { x: c.x - w / 2, y: c.y - hh / 2 };
-    let bestScore = Infinity;
-    for (let dy = -200; dy <= 200; dy += 20) {
-      for (let dx = -320; dx <= 320; dx += 40) {
-        const x = clamp(c.x - w / 2 + dx, 8, Math.max(8, this.vw - w - 8));
-        const y = clamp(c.y - hh / 2 + dy, 8, Math.max(8, this.vh - hh - 8));
-        let cover = 0;
-        for (const o of others) {
-          const ix = Math.min(x + w, o.x + o.w) - Math.max(x, o.x);
-          const iy = Math.min(y + hh, o.y + o.h) - Math.max(y, o.y);
-          if (ix > 0 && iy > 0) cover += ('ui' in o ? 200000 : 4000) + ix * iy;
-        }
-        const score = cover + Math.hypot(x + w / 2 - c.x, y + hh / 2 - c.y) * 3;
-        if (score < bestScore) {
-          bestScore = score;
-          best = { x, y };
-        }
-      }
-    }
-    return best;
-  }
-
   private selectionBounds(): Rect | null {
     let r: Rect | null = null;
     const add = (b: Rect) => {
@@ -2230,6 +2288,7 @@ export class LodeFlowElement extends Base {
   }
 
   private placeMagnets() {
+    if (this.graphPresentation) return;
     const vw = this.vw;
     const vh = this.vh;
     // ---- diagram magnet (puck), first: the other floating controls keep clear of it ----
@@ -2238,7 +2297,10 @@ export class LodeFlowElement extends Base {
     const ph = this.puck.offsetHeight;
     let px = vw - pw - 8;
     let py = 8;
-    if (this.geo) {
+    if (!this._doc.nodes.length) {
+      px = (vw - pw) / 2;
+      py = (vh - ph) / 2;
+    } else if (this.geo) {
       const db = screenBox(this.camShown, vw, vh, { x: 0, y: 0, w: this.geo.width, h: this.geo.height });
       px = db.x + db.w - pw;
       py = db.y - ph - 6;
@@ -2301,25 +2363,6 @@ export class LodeFlowElement extends Base {
       this.panelEl.style.transform = `translate(${Math.round(clamp(x, 8, Math.max(8, vw - w - 8)))}px, ${Math.round(clamp(y, 8, Math.max(8, vh - hh - 8)))}px)`;
     } else this.panelEl.hidden = true;
 
-    // ---- in-place way back ----
-    if (this.wayBack && this.hist.peekUndo() === this.wayBack.entry) {
-      const wb = this.wayBack;
-      let wp = wb.world;
-      if (wb.anchor) {
-        const a = this.shown.nodes.get(wb.anchor);
-        if (a) wp = { x: a.x + wb.offset.x, y: a.y + wb.offset.y };
-      }
-      const s = toScreen(this.camShown, vw, vh, wp);
-      this.wayEl.hidden = false;
-      const w = this.wayEl.offsetWidth;
-      const hh = this.wayEl.offsetHeight;
-      // Centred on the spot the content left, unless that covers something; then beside it.
-      const at = this.placeFree(s, w, hh);
-      this.wayEl.style.transform = `translate(${Math.round(at.x)}px, ${Math.round(at.y)}px)`;
-    } else {
-      this.keepFocus(this.wayEl, () => (this.wayEl.hidden = true));
-      if (this.wayBack && this.hist.peekUndo() !== this.wayBack.entry) this.wayBack = null;
-    }
     // ---- help ----
     if (this.helpOpen) {
       const w = this.helpEl.offsetWidth;
@@ -2329,7 +2372,7 @@ export class LodeFlowElement extends Base {
   }
 
   private btn(act: string, icon: string, text: string, chord: string, extra = ''): string {
-    const title = `${text} (${chord})`;
+    const title = chord && !this.touchContext ? `${text} (${chord})` : text;
     return `<button class="mb ${extra}" data-act="${act}" title="${title}" aria-label="${title}">${icon}<span>${text}</span>${kbd(chord)}</button>`;
   }
 
@@ -2340,7 +2383,7 @@ export class LodeFlowElement extends Base {
    * is ⇧ + the key unless it has its own (Dive J, Surface K).
    */
   private flipBtn(act: string, back: string, icon: string, backIcon: string, text: string, chord: string, tip: string, backTip: string, backChord = '⇧' + chord): string {
-    const title = `${tip} (${chord}); ⇧-click: ${backTip} (${backChord})`;
+    const title = this.touchContext ? tip : `${tip} (${chord}); ⇧-click: ${backTip} (${backChord})`;
     return `<button class="mb flip" data-act="${act}" data-back="${back}" title="${title}" aria-label="${title}"><span class="fl">${icon}${backIcon}</span><span>${text}</span><span class="keys">${kbd(chord)}${kbd(backChord)}</span></button>`;
   }
 
@@ -2400,7 +2443,7 @@ export class LodeFlowElement extends Base {
       html += levelBtns();
       html += stepBtns();
     }
-    html += `<button class="mb" data-act="locate" hidden title="Show the selection (F)" aria-label="Show the selection (F)">${ICON.locate}<span>Show</span>${kbd('F')}</button>`;
+    html += `<button class="mb" data-act="locate" hidden title="${this.touchContext ? 'Show the selection' : 'Show the selection (F)'}" aria-label="${this.touchContext ? 'Show the selection' : 'Show the selection (F)'}">${ICON.locate}<span>Show</span>${kbd('F')}</button>`;
     this.keepFocus(this.nodeMag, () => {
       this.nodeMagBar.innerHTML = html;
       this.nodeMagBar.querySelectorAll<HTMLButtonElement>('button[data-act]').forEach((b) =>
@@ -2436,24 +2479,28 @@ export class LodeFlowElement extends Base {
     this.syncLinkerReceipt();
     const u = this.hist.peekUndo();
     const r = this.hist.peekRedo();
-    // With nothing selected, Add node lives here (with a selection it is on the selection's controls).
-    const add = !this.readonly_ && !this.view.sel.length;
-    const key = [u?.label, r?.label, !!this.panel, this.saveProblem, add].join('|');
+    // Add stays available in the diagram toolbar and follows N's selection context.
+    const add = !this.readonly_;
+    const layout = this._doc.nodes.length > 0;
+    const key = [u?.label, r?.label, !!this.panel, this.helpOpen, this.saveProblem, add, layout].join('|');
     if (key === this.puckKey) return;
     this.puckKey = key;
+    const undoTitle = u ? `Undo ${esc(u.label)}${this.touchContext ? '' : ` (${K.undo})`}` : '';
+    const redoTitle = r ? `Redo ${esc(r.label)}${this.touchContext ? '' : ` (${K.redo})`}` : '';
     const undo = u
-      ? `<button class="mb" data-act="undo" title="Undo ${esc(u.label)} (${K.undo})" aria-label="Undo ${esc(u.label)} (${K.undo})">${ICON.undo}<span>${esc(u.label)}</span>${kbd(K.undo)}</button>`
-      : `<button class="mb" data-act="undo" disabled title="Nothing to undo" aria-label="Nothing to undo">${ICON.undo}${kbd(K.undo)}</button>`;
+      ? `<button class="mb" data-act="undo" title="${undoTitle}" aria-label="${undoTitle}">${ICON.undo}<span>${esc(u.label)}</span>${kbd(K.undo)}</button>`
+      : '';
     const redo = r
-      ? `<button class="mb" data-act="redo" title="Redo ${esc(r.label)} (${K.redo})" aria-label="Redo ${esc(r.label)} (${K.redo})">${ICON.redo}${kbd(K.redo)}</button>`
+      ? `<button class="mb" data-act="redo" title="${redoTitle}" aria-label="${redoTitle}">${ICON.redo}${kbd(K.redo)}</button>`
       : '';
     const saveNote = this.saveProblem ? `<span class="save-problem" role="status" title="${esc(this.saveProblem)}">Not saved</span>` : '';
-    const addBtn = add ? this.flipBtn('addnode', 'addpick', ICON.node, ICON.node, 'Add node', 'N', 'Add a node', 'pick nodes for a new node to link to') : '';
-    this.keepFocus(this.puck, () => this.fillPuck(addBtn, undo, redo, saveNote));
+    const addBtn = add ? this.flipBtn('addnode', 'addpick', ICON.node, ICON.node, 'Add node', 'N', 'Add a node', 'add before, or choose nodes to link to') : '';
+    this.keepFocus(this.puck, () => this.fillPuck(addBtn, undo, redo, saveNote, layout));
   }
 
-  private fillPuck(addBtn: string, undo: string, redo: string, saveNote: string) {
-    this.puck.innerHTML = `<div class="bar">${addBtn}<button class="mb ${this.panel ? 'on' : ''}" data-act="panel" aria-expanded="${!!this.panel}" title="Layout and view (/)" aria-label="Layout and view (/)">${ICON.magnet}<span>Layout</span>${kbd('/')}</button>${undo}${redo}${saveNote}</div>`;
+  private fillPuck(addBtn: string, undo: string, redo: string, saveNote: string, layout: boolean) {
+    const layoutBtn = layout ? `<button class="mb ${this.panel ? 'on' : ''}" data-act="panel" aria-expanded="${!!this.panel}" title="Layout and view" aria-label="Layout and view">${ICON.magnet}<span>Layout</span>${kbd('/')}</button>` : '';
+    this.puck.innerHTML = `<div class="bar"><div class="puck-actions">${addBtn}${layoutBtn}${undo}${redo}${saveNote}</div><button class="mb help-toggle ${this.helpOpen ? 'on' : ''}" data-act="help" title="Help" aria-label="Help" aria-expanded="${this.helpOpen}"><span aria-hidden="true">?</span></button></div>`;
     this.puck.querySelectorAll<HTMLButtonElement>('button[data-act]').forEach((b) => this.keepEditorFocus(b));
     this.puck.querySelectorAll<HTMLButtonElement>('button[data-act]').forEach((b) =>
       b.addEventListener('click', (e) => {
@@ -2525,7 +2572,6 @@ export class LodeFlowElement extends Base {
         ${this.btn('fit', ICON.fit, this.view.follow ? 'Fitting' : 'Fit', '0', this.view.follow ? 'on' : '')}
         ${this.btn('zoom100', ICON.locate, `${zoom}%`, '1')}
         ${rot ? this.btn('upright', ICON.upright, `Upright (${rot}°)`, 'R') : ''}
-        ${this.btn('help', ICON.help, 'Keys', '?')}
       </div>
       <button class="disc" data-act="exhaustive" aria-expanded="${this.exhaustive}"><span>${this.exhaustive ? 'Fewer values' : `All ${TUNABLE_META.length} values`}</span><span>${this.exhaustive ? '‹' : '›'}</span></button>
       <div class="exh" ${this.exhaustive ? '' : 'hidden'}>
@@ -2596,7 +2642,22 @@ export class LodeFlowElement extends Base {
   private openHelp() {
     this.helpOpen = true;
     const row = (k: string, d: string) => `<tr><td>${k}</td><td>${d}</td></tr>`;
-    this.helpEl.innerHTML = `<h2><span>Gestures and keys</span><button class="mb" data-act="close-help" title="Close (Esc)" aria-label="Close (Esc)">${ICON.close}${kbd('Esc')}</button></h2>
+    this.helpEl.innerHTML = this.touchContext ? `<h2><span>Gestures</span><button class="mb" data-act="close-help" title="Close" aria-label="Close">${ICON.close}</button></h2>
+      <table>
+      ${row('Tap', 'Select a node, group or edge')}
+      ${row('Tap again', 'Edit its text (an edge: its label). Tap the canvas to keep the words and finish editing')}
+      ${row('Add node', 'Add after the selected node, inside the selected group, or in the middle of the selected edge. With nothing selected, add a free node')}
+      ${row('Double-tap', 'Add a node there (inside a group when over one)')}
+      ${row('Drag', 'Pan the diagram')}
+      ${row('Pinch / two-finger twist', 'Zoom / rotate the view')}
+      ${row('Long-press', 'Open layout controls right where you are')}
+      ${row('Link', 'Select a node, tap Link, then tap a node or an edge in the list. An edge joins its merge')}
+      ${row('List checkboxes', 'Check several rows, then tap Link or Add node to act on them together')}
+      ${row('Groups', 'Tap a group’s chevron to fold or unfold it. Its selection controls also offer Dive, Expand or Collapse')}
+      ${row('Delete', 'Delete the selection. The diagram toolbar’s Undo brings it back')}
+      ${row('Layout', 'Change flow direction, spacing and grouping, or fit the diagram into view')}
+      ${row('Undo / redo', 'Take back or repeat content and view changes from the diagram toolbar')}
+      </table>` : `<h2><span>Gestures and keys</span><button class="mb" data-act="close-help" title="Close (Esc)" aria-label="Close (Esc)">${ICON.close}${kbd('Esc')}</button></h2>
       <h4>Pointer</h4><table>
       ${row('Click', 'Select a node, group or edge')}
       ${row('Click again', 'Edit its text (an edge: its label)')}
@@ -2646,29 +2707,11 @@ export class LodeFlowElement extends Base {
     this.schedule();
   }
 
-  private showWayBack(entry: Entry, message: string, world: Pt, anchor: string | null) {
-    const a = anchor ? this.shown.nodes.get(anchor) : null;
-    this.wayBack = { entry, message, world, anchor, offset: a ? { x: world.x - a.x, y: world.y - a.y } : { x: 0, y: 0 } };
-    this.wayEl.innerHTML = `<span class="msg">${esc(message)}</span>${this.btn('undo', ICON.undo, 'Undo', K.undo, 'primary')}<button class="mb" data-act="dismiss-way" title="Dismiss" aria-label="Dismiss">${ICON.close}</button>`;
-    this.wayEl.querySelectorAll<HTMLButtonElement>('button[data-act]').forEach((b) => this.keepEditorFocus(b));
-    this.wayEl.querySelectorAll<HTMLButtonElement>('button[data-act]').forEach((b) =>
-      b.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (b.dataset.act === 'undo') this.undo();
-        else {
-          this.wayBack = null;
-          this.schedule();
-          this.vp.focus({ preventScroll: true });
-        }
-      }),
-    );
-  }
-
   // =====================================================================
   // Actions (buttons and keys share these)
   // =====================================================================
 
-  private action(act: string) {
+  private action(act: string): void {
     const sel = this.view.sel;
     const doc = this._doc;
     const one = sel.length === 1 ? sel[0] : null;
@@ -2699,10 +2742,10 @@ export class LodeFlowElement extends Base {
         if (!one || !M.groupById(doc, one)) return this.addFree(null, null);
         return;
       case 'addnode':
-        // From the Layout pill: the new node appears mid-view, not under the pill.
-        return this.addFree(null, null, { x: this.vw / 2, y: this.vh / 2 });
       case 'addpick':
-        return this.openAdder(this.lastPointerType !== 'touch');
+        // The diagram toolbar advertises N / ⇧N and follows those keys in every selection.
+        if (one && M.groupById(doc, one)) return this.addFree(one, null);
+        return this.action(act === 'addnode' ? 'after' : 'before');
       case 'dive':
         return this.diveSelection();
       case 'surface':
@@ -2934,9 +2977,8 @@ export class LodeFlowElement extends Base {
         ? `the edge ${singleEdge.junction && singleEdge.trunk.id !== sel[0] ? M.describeConnection(doc, { ...singleEdge, inputs: [M.edgeById(doc, sel[0])!.from] }) : M.describeConnection(doc, singleEdge)}`
         : words.join(' and ');
     const aScreen = anchor ? this.shownScreen(anchor) : null;
-    const e = this.commit(`Delete ${words.join(' and ')}`, 'delete', { doc: r.doc, view: { sel: [] } }, { where, anchor: anchor && aScreen ? { id: anchor, screen: aScreen } : null });
-    if (e) this.showWayBack(e, `Deleted ${what}`, where, anchor && aScreen ? anchor : null);
-    this.announce(`Deleted ${what}. ${K.undo} brings it back.`);
+    this.commit(`Delete ${words.join(' and ')}`, 'delete', { doc: r.doc, view: { sel: [] } }, { where, anchor: anchor && aScreen ? { id: anchor, screen: aScreen } : null });
+    this.announce(`Deleted ${what}. ${this.touchContext ? 'Undo' : K.undo} brings it back.`);
   }
 
   private locateSelection() {
@@ -3244,6 +3286,7 @@ export class LodeFlowElement extends Base {
   }
 
   private onPointerDown(e: PointerEvent) {
+    if (this.graphPresentation) return;
     const p = this.local(e);
     this.lastPointer = p;
     if ((e.target as Element).closest?.('textarea')) return;
@@ -3325,6 +3368,7 @@ export class LodeFlowElement extends Base {
   }
 
   private onPointerMove(e: PointerEvent) {
+    if (this.graphPresentation) return;
     const p = this.local(e);
     this.lastPointer = p;
     if (!this.pointers.has(e.pointerId)) {
@@ -3399,6 +3443,7 @@ export class LodeFlowElement extends Base {
   }
 
   private onPointerUp(e: PointerEvent, cancelled = false) {
+    if (this.graphPresentation) return;
     const p = this.local(e);
     this.pointers.delete(e.pointerId);
     const g = this.gesture;
@@ -3459,6 +3504,7 @@ export class LodeFlowElement extends Base {
   }
 
   private handleClick(target: Hit, at: Pt, toggle: boolean, dbl: boolean, endedEdit = false) {
+    if (this.eventActivation && target.type === 'node' && target.id && !toggle) return this.activateNode(target.id, 'pointer');
     const sel = this.view.sel;
     // The press ended an edit that removed what it landed on (the rim of a new node left empty):
     // it counts as a click on the bare canvas.
@@ -3512,6 +3558,7 @@ export class LodeFlowElement extends Base {
   }
 
   private onContextMenu(e: MouseEvent) {
+    if (this.graphPresentation) return;
     e.preventDefault();
     const p = this.local(e);
     const target = this.withEdge(e.target, this.hit(e.target), p);
@@ -3523,6 +3570,7 @@ export class LodeFlowElement extends Base {
   }
 
   private onWheel(e: WheelEvent) {
+    if (this.graphPresentation) return;
     const p = this.local(e);
     this.lastPointer = p;
     const zoomIntent = e.ctrlKey || e.metaKey;
@@ -3672,7 +3720,7 @@ export class LodeFlowElement extends Base {
         : `Merge ${src} into ${conn ? M.describeConnection(doc, conn) : 'the edge'}`;
     const s = this.shownScreen(keep);
     if (!this.commit(what, 'link', { doc: r.doc, view: { sel: via === 'drag' ? [r.trunk] : this.view.sel } }, { anchor: s && !this.view.follow ? { id: keep, screen: s } : null })) return null;
-    this.announce(`${what}. ${K.undo} undoes it.`);
+    this.announce(`${what}. ${this.touchContext ? 'Undo' : K.undo} undoes it.`);
     return r;
   }
 
@@ -3694,7 +3742,7 @@ export class LodeFlowElement extends Base {
     if (!this.commit(what, 'link', { doc: r.doc, view: { sel: this.view.sel } }, { anchor: s && !this.view.follow ? { id: keep, screen: s } : null })) return false;
     const skipped = r.problems.length ? ` ${r.problems.length} skipped: ${[...new Set(r.problems)].join('; ')}.` : '';
     if (skipped) this.nudge(at, skipped.trim());
-    this.announce(`${what}: ${joinAnd(picks.map((x) => M.label(x.text)))}.${skipped} ${K.undo} undoes it.`);
+    this.announce(`${what}: ${joinAnd(picks.map((x) => M.label(x.text)))}.${skipped} ${this.touchContext ? 'Undo' : K.undo} undoes it.`);
     return true;
   }
 
@@ -3867,12 +3915,12 @@ export class LodeFlowElement extends Base {
     // A pick acts on every checked row too; the commit bar says so and acts on the checked rows alone.
     const act = dir === 'new' ? `${kbd('↵')} before · ${kbd('⇧↵')} after` : `${kbd('↵')} link`;
     this.linkerEl.setAttribute('aria-label', title);
-    this.linkerEl.innerHTML = `<div class="lk-head"><span class="lk-title">${esc(title)}</span><button class="mb" data-act="close-linker" title="Close (Esc)" aria-label="Close (Esc)">${ICON.close}${kbd('Esc')}</button></div>
+    this.linkerEl.innerHTML = `<div class="lk-head"><span class="lk-title">${esc(title)}</span><button class="mb" data-act="close-linker" title="${this.touchContext ? 'Close' : 'Close (Esc)'}" aria-label="${this.touchContext ? 'Close' : 'Close (Esc)'}">${ICON.close}${kbd('Esc')}</button></div>
       <input class="lk-filter" type="text" role="combobox" aria-expanded="true" aria-controls="lk-list" aria-autocomplete="list" autocomplete="off" spellcheck="false" placeholder="${filter}" aria-label="${filter}">
       <div class="lk-receipt" role="status" hidden></div>
       <div class="lk-checked" hidden></div>
       <ul class="lk-list" id="lk-list" role="listbox" aria-multiselectable="true" aria-label="${listName}, nearest first"></ul>
-      <div class="lk-foot">${kbd('↑')}${kbd('↓')} choose · ${act} · ${IS_MAC ? '⌘' : 'Ctrl'}-click or ${kbd(K.addNext)} check more · ⇧-click ticks every row between · ${kbd('Esc')} close</div>`;
+      <div class="lk-foot key-hint">${kbd('↑')}${kbd('↓')} choose · ${act} · ${IS_MAC ? '⌘' : 'Ctrl'}-click or ${kbd(K.addNext)} check more · ⇧-click ticks every row between · ${kbd('Esc')} close</div>`;
     const input = this.linkerEl.querySelector('input')!;
     input.addEventListener('input', () => {
       if (!this.linker) return;
@@ -4245,6 +4293,22 @@ export class LodeFlowElement extends Base {
   // =====================================================================
 
   private onKeyDown(e: KeyboardEvent) {
+    const actionNode = (e.target as Element).closest?.('.node.action[data-id]') as HTMLElement | null;
+    if (this.eventActivation && actionNode && ['Enter', ' ', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === 'Enter' || e.key === ' ') {
+        if (!e.repeat) this.activateNode(actionNode.dataset.id!, 'keyboard');
+      } else {
+        const nodes = [...this.nodeEls.values()].filter((n) => getComputedStyle(n).visibility !== 'hidden');
+        const index = nodes.indexOf(actionNode);
+        const at = e.key === 'Home' ? 0 : e.key === 'End' ? nodes.length - 1 : clamp(index + (e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 1), 0, nodes.length - 1);
+        nodes[at]?.focus({ preventScroll: true });
+        nodes[at]?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      }
+      return;
+    }
+    if (this.graphPresentation) return;
     if (this.editing && e.target === this.editing.ta) return;
     const t = e.target as HTMLElement;
     // The link list handles its own keys.
@@ -4303,10 +4367,6 @@ export class LodeFlowElement extends Base {
       if (this.helpOpen) return done(), this.closeHelp();
       if (this.panel) return done(), this.closePanel(true);
       if (this.linker) return done(), this.closeLinker(true);
-      if (this.wayBack) {
-        this.wayBack = null;
-        this.schedule();
-      }
       if (this.view.sel.length) {
         done();
         return this.deselectAll();
@@ -4333,6 +4393,7 @@ export class LodeFlowElement extends Base {
         done();
         if (e.shiftKey) return this.surfaceSelection();
         // ↵ edits one selected item (a group: its title); with several or none, it dives (Al, Q7).
+        if (one && this.eventActivation && M.nodeById(this._doc, one)) return this.activateNode(one, 'keyboard');
         if (one) return this.startEdit(one);
         return this.diveSelection();
       }
@@ -4351,8 +4412,7 @@ export class LodeFlowElement extends Base {
       case 'n':
       case 'N':
         done();
-        if (one && M.groupById(this._doc, one)) return this.addFree(one, null);
-        return this.action(e.shiftKey ? 'before' : 'after');
+        return this.action(e.shiftKey ? 'addpick' : 'addnode');
       case 'e':
       case 'E':
       case 'l':

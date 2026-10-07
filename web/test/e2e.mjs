@@ -24,7 +24,7 @@ const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/ja
 const server = createServer(async (req, res) => {
   try {
     const p = join(root, decodeURIComponent(new URL(req.url, 'http://x').pathname));
-    const body = await readFile(p);
+    const body = await readFile(process.env.LF_BUNDLE_FILE && p === join(root, 'web/dist/lode-flow.js') ? process.env.LF_BUNDLE_FILE : p);
     res.writeHead(200, { 'content-type': types[extname(p)] ?? 'application/octet-stream', 'cache-control': 'no-store' });
     res.end(body);
   } catch {
@@ -37,9 +37,10 @@ const base = `http://127.0.0.1:${server.address().port}`;
 
 const browser = await chromium.launch();
 const results = [];
-// ONLY=<text> runs just the scenarios whose name contains it.
+// ONLY=<text> runs matching scenarios; separate several matches with |.
+const included = (name) => !process.env.ONLY || process.env.ONLY.split('|').some((text) => name.includes(text));
 async function scenario(name, fn, viewport = { width: 1280, height: 800 }, ctxOpts = {}) {
-  if (process.env.ONLY && !name.includes(process.env.ONLY)) return;
+  if (!included(name)) return;
   const page = await browser.newPage({ viewport, ...ctxOpts });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.stack || e.message));
@@ -266,7 +267,7 @@ await scenario('pan, zoom, rotate and selection are undoable, one step per gestu
   assert.ok(Math.abs((await el(page)).cam.x - cam1.x) < 0.5, 'redo pan');
 });
 
-await scenario('keyboard only: arrows walk the diagram, N adds after, Ctrl+Enter chains, Delete + in-place Undo', async (page) => {
+await scenario('keyboard only: arrows walk the diagram, N adds after, Ctrl+Enter chains, Delete + toolbar Undo', async (page) => {
   await page.focus('lode-flow');
   await page.keyboard.press('Tab');
   await E(page, () => document.querySelector('lode-flow').shadowRoot.querySelector('.vp').focus());
@@ -297,12 +298,12 @@ await scenario('keyboard only: arrows walk the diagram, N adds after, Ctrl+Enter
   await page.keyboard.press('Delete');
   await settle(page, 600);
   assert.equal((await el(page)).doc.nodes.length, before + 1);
-  const wb = await center(page, '.wayback [data-act="undo"]');
-  assert.ok(wb, 'the way back appears where the node was');
-  await shot(page, '08-way-back');
+  const wb = await center(page, '.puck [data-act="undo"]');
+  assert.ok(wb, 'the persistent diagram toolbar offers Undo');
+  await shot(page, '08-toolbar-undo');
   await page.mouse.click(wb.x, wb.y);
   await settle(page, 600);
-  assert.equal((await el(page)).doc.nodes.length, before + 2, 'in-place Undo restores it');
+  assert.equal((await el(page)).doc.nodes.length, before + 2, 'toolbar Undo restores it');
 });
 
 await scenario('double-click empty canvas adds a node there; Escape on an empty new node leaves no trace', async (page) => {
@@ -570,7 +571,7 @@ await scenario('touch: a tap on the bare canvas ends Edit mode and keeps the ite
   // models losing window focus (the default headless shell never blurs the page), so this one
   // launches its own browser.
   const name = 'switching to another tab mid-edit keeps Edit mode open: on return the typing carries on, and Esc still works';
-  if (!process.env.ONLY || name.includes(process.env.ONLY)) {
+  if (included(name)) {
     const t0 = Date.now();
     let real;
     try {
@@ -815,7 +816,7 @@ await scenario('readonly: no editing controls, but selection and view still work
   await page.keyboard.press('Control+z');
   await settle(page, 300);
   assert.deepEqual((await el(page)).sel, []);
-  assert.equal(await center(page, '.puck [data-act="addnode"]'), null, 'no Add node on the Layout pill');
+  assert.equal(await center(page, '.puck [data-act="addnode"]'), null, 'no Add node in a read-only toolbar');
 });
 
 await scenario('after a click on a control that then redraws or hides, the diagram’s keys still work', async (page) => {
@@ -853,15 +854,15 @@ await scenario('after a click on a control that then redraws or hides, the diagr
   await page.keyboard.press('Control+z');
   await settle(page, 500);
   assert.ok((await doc()).nodes.some((x) => x.id === 'slip'), 'Ctrl+Z after clicking the pill’s Undo');
-  // Undo on the strip where a deleted node was (the strip goes away), then Delete by key.
+  // Undo after deletion on the persistent toolbar, then Delete by key.
   await page.keyboard.press('Delete');
   await settle(page, 500);
-  b = await center(page, '.wayback [data-act="undo"]');
+  b = await center(page, '.puck [data-act="undo"]');
   await page.mouse.click(b.x, b.y);
   await settle(page, 400);
   await page.keyboard.press('Delete');
   await settle(page, 500);
-  assert.ok(!(await doc()).nodes.some((x) => x.id === 'slip'), 'Delete after clicking the strip’s Undo');
+  assert.ok(!(await doc()).nodes.some((x) => x.id === 'slip'), 'Delete after clicking the toolbar’s Undo');
 });
 
 await scenario('wheel over the page does not get trapped until the diagram has focus', async (page) => {
@@ -1156,7 +1157,7 @@ await scenario('dropping a link on an edge merges them: one junction, one shared
   assert.equal(s.doc.junctions.length, 0, 'one cause left: the junction dissolves');
   const back = s.doc.edges.find((e) => e.id === trunk);
   assert.deepEqual([back.from, back.to, back.label], ['cycle', 'slip', 'by next quarter']);
-  assert.ok(await center(page, '.wayback [data-act="undo"]'), 'a way back where the branch was');
+  assert.ok(await center(page, '.puck [data-act="undo"]'), 'toolbar Undo after deleting a branch');
   for (let i = 0; i < 5; i++) await page.keyboard.press('Control+z');
   await settle(page, 800);
   s = await el(page);
@@ -1295,7 +1296,7 @@ await scenario('⇧E (or ⇧-click on Link, which ⇧ turns around in place) lin
   assert.equal(await E(page, () => document.querySelector('lode-flow').shadowRoot.querySelector('.linker .lk-title').textContent), 'Link ‘Customers lose trust’ to…');
 });
 
-await scenario('Add node: one two-way button (N ⇧N) on a node; with nothing selected it sits on the Layout pill: N adds a free node, ⇧N picks nodes for it to link before (↵) or after (⇧↵)', async (page) => {
+await scenario('Add node: contextual N ⇧N on the selection and always on the diagram toolbar; nothing selected adds a free node or picks nodes to link before (↵) or after (⇧↵)', async (page) => {
   const sr = (fn, arg) => E(page, fn, arg);
   const t = await center(page, '.node[data-id="trust"]');
   await page.mouse.click(t.x, t.y);
@@ -1605,7 +1606,7 @@ await scenario('focus ring: thin blue with a selection, thick with nothing selec
   assert.equal(await ring(), 2, 'focus on a control inside: still on');
 });
 
-await scenario('edges: click selects, click again labels, S / ⇧S (or Select edge, ⇧-click for back) step through a node’s edges, ⌫ deletes with a way back', async (page) => {
+await scenario('edges: click selects, click again labels, S / ⇧S (or Select edge, ⇧-click for back) step through a node’s edges, ⌫ deletes with toolbar Undo', async (page) => {
   let s = await el(page);
   const id = edgeId(s.doc, 'slip', 'trust');
   const m = await edgeMid(page, id);
@@ -1692,9 +1693,9 @@ await scenario('edges: click selects, click again labels, S / ⇧S (or Select ed
   await page.keyboard.press('Delete');
   await settle(page, 600);
   assert.equal((await el(page)).doc.edges.length, s.doc.edges.length - 1);
-  const wb = await center(page, '.wayback [data-act="undo"]');
-  assert.ok(wb, 'deleting an edge leaves a way back');
-  assert.match(await E(page, () => document.querySelector('lode-flow').shadowRoot.querySelector('.wayback .msg').textContent), /^Deleted the edge ‘/);
+  const wb = await center(page, '.puck [data-act="undo"]');
+  assert.ok(wb, 'deleting an edge leaves toolbar Undo');
+  assert.match(await E(page, () => document.querySelector('lode-flow').shadowRoot.querySelector('.puck [data-act="undo"]').title), /^Undo Delete/);
   await page.mouse.click(wb.x, wb.y);
   await settle(page, 500);
   assert.equal((await el(page)).doc.edges.length, s.doc.edges.length);

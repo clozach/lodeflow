@@ -1,6 +1,6 @@
 // React wrapper: typed props and callbacks over the <lode-flow> custom element.
 import { createElement, forwardRef, useEffect, useImperativeHandle, useRef, type CSSProperties } from 'react';
-import type { LodeFlowElement, LodeFlowLayoutInfo } from './lode-flow';
+import type { LodeFlowActivation, LodeFlowElement, LodeFlowLayoutInfo } from './lode-flow';
 import type { Bias, Compactness, FlowDoc, Orientation } from './model';
 
 export interface LodeFlowProps {
@@ -18,6 +18,10 @@ export interface LodeFlowProps {
   /** Smallest zoom fitting may use before the view scrolls instead: 0.6 or '60%' (default 0.7). */
   fitMin?: number | string;
   readOnly?: boolean;
+  /** 'graph': transparent, passive drawing with no editor chrome or camera gestures. */
+  presentation?: 'editor' | 'graph';
+  /** 'event': nodes activate the host callback on click, Enter or Space instead of editing. */
+  nodeActivation?: 'edit' | 'event';
   /** Keep content and undo history in localStorage under this key. */
   storageKey?: string;
   /** Built-in appearance; omitted follows the page's light/dark preference. */
@@ -35,6 +39,7 @@ export interface LodeFlowProps {
   onLayout?: (info: LodeFlowLayoutInfo) => void;
   onHistory?: (h: { canUndo: boolean; canRedo: boolean; undoLabel: string | null; redoLabel: string | null }) => void;
   onLimit?: (detail: { maxItems: number; itemCount: number; attemptedCount: number; message: string }) => void;
+  onActivate?: (detail: LodeFlowActivation) => void;
 }
 
 export const LodeFlow = forwardRef<LodeFlowElement | null, LodeFlowProps>(function LodeFlow(props, ref) {
@@ -66,6 +71,7 @@ export const LodeFlow = forwardRef<LodeFlowElement | null, LodeFlowProps>(functi
       on('lode-layout', (d) => handlers.current.onLayout?.(d)),
       on('lode-history', (d) => handlers.current.onHistory?.(d)),
       on('lode-limit', (d) => handlers.current.onLimit?.(d)),
+      on('lode-activate', (d) => handlers.current.onActivate?.(d)),
     ];
     return () => offs.forEach((f) => f());
   }, []);
@@ -80,6 +86,8 @@ export const LodeFlow = forwardRef<LodeFlowElement | null, LodeFlowProps>(functi
   if (props.nodeWidth) attrs['node-width'] = String(props.nodeWidth);
   if (props.fitMin !== undefined) attrs['fit-min'] = String(props.fitMin);
   if (props.readOnly) attrs.readonly = '';
+  if (props.presentation) attrs.presentation = props.presentation;
+  if (props.nodeActivation) attrs['node-activation'] = props.nodeActivation;
   if (props.storageKey) attrs['storage-key'] = props.storageKey;
   if (props.theme) attrs.theme = props.theme;
   if (props.maxItems !== undefined) attrs['max-items'] = String(props.maxItems);

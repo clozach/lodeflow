@@ -188,6 +188,55 @@ try {
         await page.emulateMedia({reducedMotion: 'no-preference'});
       });
 
+      await check(`${name}: Layout Help and lists fit the visible window and parent clip`, async () => {
+        await page.emulateMedia({reducedMotion: 'reduce'});
+        for (const parentClip of [false, true]) {
+          await page.setViewportSize({width: 393, height: 560});
+          await reset(page);
+          await flow(page, (f, parentClip) => {
+            f.style.height = '700px'; f.style.marginTop = '240px';
+            if (parentClip) {
+              const p = document.createElement('div'); p.id = 'popup-scroller'; p.style.cssText = 'height:220px;overflow:auto;margin-top:120px';
+              f.style.marginTop = '0'; f.before(p); p.append(f); p.scrollTop = 180;
+            }
+          }, parentClip);
+          for (const kind of ['panel', 'help', 'linker', 'adder']) {
+            await flow(page, (f, kind) => {
+              f.closePanel(); f.closeHelp(); f.closeLinker();
+              if (kind === 'panel') f.openPanel('puck');
+              else if (kind === 'help') f.openHelp();
+              else if (kind === 'adder') f.openAdder(true);
+              else f.openLinker('a', true, 'out');
+            }, kind);
+            const selector = kind === 'adder' ? '.linker' : `.${kind}`;
+            const pane = page.locator(selector);
+            const fits = async () => page.waitForFunction((selector) => {
+              const f = document.querySelector('lode-flow'), el = f.shadowRoot.querySelector(selector), r = el.getBoundingClientRect(), p = document.querySelector('#popup-scroller')?.getBoundingClientRect();
+              return r.top >= Math.max(0, p?.top ?? 0) + 7 && r.bottom <= Math.min(innerHeight, p?.bottom ?? innerHeight) - 7 && r.left >= 7 && r.right <= innerWidth - 7;
+            }, selector, {timeout: 3000});
+            await fits();
+            if (kind === 'panel') { await pane.locator('[data-act="exhaustive"]').click(); await fits(); }
+            await page.setViewportSize({width: 360, height: 430}); await fits();
+            if (parentClip) {
+              await page.locator('#popup-scroller').evaluate(p => p.style.height = '180px'); await fits();
+              await page.locator('#popup-scroller').evaluate(p => p.style.height = '220px'); await fits();
+            }
+            const r = await pane.boundingBox(); await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2); await page.mouse.wheel(0, 5000); await settled(page);
+            if (kind === 'help') {
+              assert.ok(await pane.evaluate(el => el.scrollTop > 0), 'Help scrolls within its bounded pane');
+            }
+            for (const control of await pane.locator('button:visible,input:visible').all()) {
+              if (await control.isDisabled()) continue;
+              await control.scrollIntoViewIfNeeded(); await fits();
+              assert.equal(await control.evaluate(b => {const r = b.getBoundingClientRect(); return b.contains(b.getRootNode().elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));}), true, `${kind} control reachable after resizing and scrolling`);
+            }
+          }
+          await flow(page, f => { f.closePanel(); f.closeHelp(); f.closeLinker(); const p = f.parentElement; if (p.id === 'popup-scroller') {p.before(f);p.remove();} f.style.height = '100vh'; f.style.marginTop = '0'; });
+        }
+        await page.setViewportSize({width: 1280, height: 800});
+        await page.emulateMedia({reducedMotion: 'no-preference'});
+      });
+
       await check(`${name}: opt-in first-node hint fades and returns on empty`, async () => {
         await reset(page, empty);
         assert.equal(await page.locator('.kickstarter').isVisible(), false, 'default empty canvas has no prompt');

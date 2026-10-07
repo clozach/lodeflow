@@ -110,7 +110,7 @@ function restartGuide(next = -1) {
   guideView = { kind: 'steady', levels: reached < 0 ? 0 : Math.min(levels.length, Math.floor(reached / 4) + 1) };
   previousState = flow.getState();
   if (reached < 0) {
-    $('guide').style.width = '100%'; $('guide').style.height = '180px'; $('guide').parentElement.style.height = '180px';
+    $('guide').style.width = '100%'; $('guide').style.height = '1px'; $('guide').parentElement.style.height = '1px';
     $('guide').parentElement.scrollLeft = 0; $('guide').parentElement.scrollTop = 0;
   }
   renderGuide(true);
@@ -192,8 +192,10 @@ try {
   $('guide').addEventListener('lode-layout', () => {
     const info = $('guide').layoutInfo;
     $('guide').style.width = `${Math.max($('guide').parentElement.clientWidth, Math.ceil(info.width + 64))}px`;
-    $('guide').style.height = `${Math.max(180, Math.ceil(info.height + 64))}px`;
-    $('guide').parentElement.style.height = `${Math.min(360, Math.max(180, Math.ceil(info.height + 64)))}px`;
+    // Layout includes 28px around the graph; keep 8px at each vertical edge.
+    const height = Math.max(1, Math.ceil(info.height - 40));
+    $('guide').style.height = `${height}px`;
+    $('guide').parentElement.style.height = `${height}px`;
     $('guide').showSelection();
   });
   $('appearance').addEventListener('change', (event) => {

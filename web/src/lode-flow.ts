@@ -694,8 +694,10 @@ export class LodeFlowElement extends Base {
     }
     this.readAttributes();
     if (this._doc.nodes.length === 0 && this._doc.groups.length === 0) this.loadInitial();
-    this.ro = new ResizeObserver(() => this.onResize());
+    this.ro = new ResizeObserver(() => { this.onResize(); this.schedule(); });
     this.ro.observe(this.vp);
+    // A clipped parent can resize without changing a deliberately taller diagram's size.
+    for (let parent = this.parentElement; parent; parent = parent.parentElement) this.ro.observe(parent);
     // Only a real change of size re-lays out. A newly observed element reports once, and a size
     // the last layout already measured reports again; neither needs a second layout.
     this.sizeRo = new ResizeObserver((entries) => {
@@ -712,6 +714,10 @@ export class LodeFlowElement extends Base {
       window.addEventListener('blur', this.onShift);
       window.addEventListener('focus', this.syncRing);
       window.addEventListener('blur', this.syncRing);
+      window.addEventListener('resize', this.onViewportChange);
+      window.addEventListener('scroll', this.onViewportChange, true);
+      window.visualViewport?.addEventListener('resize', this.onViewportChange);
+      window.visualViewport?.addEventListener('scroll', this.onViewportChange);
     }
     this.syncRing();
     if (typeof document !== 'undefined' && (document as any).fonts?.ready) {
@@ -731,6 +737,10 @@ export class LodeFlowElement extends Base {
       window.removeEventListener('blur', this.onShift);
       window.removeEventListener('focus', this.syncRing);
       window.removeEventListener('blur', this.syncRing);
+      window.removeEventListener('resize', this.onViewportChange);
+      window.removeEventListener('scroll', this.onViewportChange, true);
+      window.visualViewport?.removeEventListener('resize', this.onViewportChange);
+      window.visualViewport?.removeEventListener('scroll', this.onViewportChange);
     }
     this.ro?.disconnect();
     this.sizeRo?.disconnect();
@@ -2268,6 +2278,40 @@ export class LodeFlowElement extends Base {
     this.schedule();
   }
 
+  private onViewportChange = () => this.schedule();
+
+  /** Canvas-local intersection with the visual window and every clipping ancestor. */
+  private popupBounds(): Rect {
+    const vp = this.vp.getBoundingClientRect(), visual = window.visualViewport;
+    let left = Math.max(vp.left, visual?.offsetLeft ?? 0), top = Math.max(vp.top, visual?.offsetTop ?? 0);
+    let right = Math.min(vp.right, (visual?.offsetLeft ?? 0) + (visual?.width ?? window.innerWidth));
+    let bottom = Math.min(vp.bottom, (visual?.offsetTop ?? 0) + (visual?.height ?? window.innerHeight));
+    for (let parent: HTMLElement | null = this.parentElement; parent;) {
+      const style = getComputedStyle(parent), r = parent.getBoundingClientRect();
+      if (/(auto|scroll|hidden|clip)/.test(style.overflowX)) { left = Math.max(left, r.left + parent.clientLeft); right = Math.min(right, r.left + parent.clientLeft + parent.clientWidth); }
+      if (/(auto|scroll|hidden|clip)/.test(style.overflowY)) { top = Math.max(top, r.top + parent.clientTop); bottom = Math.min(bottom, r.top + parent.clientTop + parent.clientHeight); }
+      const root = parent.getRootNode();
+      parent = parent.parentElement ?? (root instanceof ShadowRoot ? root.host as HTMLElement : null);
+    }
+    return { x: left - vp.left + 8, y: top - vp.top + 8, w: Math.max(0, right - left - 16), h: Math.max(0, bottom - top - 16) };
+  }
+
+  private sizePopup(el: HTMLElement, bounds: Rect) {
+    el.style.maxWidth = `${bounds.w}px`;
+    el.style.maxHeight = `${bounds.h}px`;
+    el.style.overflow = 'auto';
+    el.style.overscrollBehavior = 'contain';
+    // In a clipped embed there may be no room beside the toolbar: the open pane owns input.
+    el.style.zIndex = '6';
+  }
+
+  private placePopup(el: HTMLElement, at: Pt, bounds: Rect) {
+    const x = clamp(at.x, bounds.x, Math.max(bounds.x, bounds.x + bounds.w - el.offsetWidth));
+    const y = clamp(at.y, bounds.y, Math.max(bounds.y, bounds.y + bounds.h - el.offsetHeight));
+    el.style.transform = `translate(${x}px, ${y}px)`;
+    return { x, y };
+  }
+
   // =====================================================================
   // Magnet controls
   // =====================================================================
@@ -2480,6 +2524,8 @@ export class LodeFlowElement extends Base {
     // ---- view panel ----
     if (this.panel) {
       this.panelEl.hidden = false;
+      const bounds = this.popupBounds();
+      this.sizePopup(this.panelEl, bounds);
       const w = this.panelEl.offsetWidth;
       const hh = this.panelEl.offsetHeight;
       let x: number;
@@ -2492,14 +2538,16 @@ export class LodeFlowElement extends Base {
         x = this.panel.at.x + 6;
         y = this.panel.at.y + 6;
       }
-      this.panelEl.style.transform = `translate(${Math.round(clamp(x, 8, Math.max(8, vw - w - 8)))}px, ${Math.round(clamp(y, 8, Math.max(8, vh - hh - 8)))}px)`;
+      this.placePopup(this.panelEl, {x, y}, bounds);
     } else this.panelEl.hidden = true;
 
     // ---- help ----
     if (this.helpOpen) {
+      const bounds = this.popupBounds();
+      this.sizePopup(this.helpEl, bounds);
       const w = this.helpEl.offsetWidth;
       const hh = this.helpEl.offsetHeight;
-      this.helpEl.style.transform = `translate(${Math.round(Math.max(8, (vw - w) / 2))}px, ${Math.round(Math.max(8, (vh - hh) / 2))}px)`;
+      this.placePopup(this.helpEl, {x: bounds.x + (bounds.w - w) / 2, y: bounds.y + (bounds.h - hh) / 2}, bounds);
     }
   }
 
@@ -4420,15 +4468,17 @@ export class LodeFlowElement extends Base {
     const n = this.shown.nodes.get(L.source);
     const sz = this.sizes.get(L.source);
     const list = this.linkerEl.querySelector('ul') as HTMLElement | null;
+    const bounds = this.popupBounds();
+    this.sizePopup(this.linkerEl, bounds);
     const w = this.linkerEl.offsetWidth;
     if (list) {
       // The title, receipt, checked-row bar and footer wrap independently. Measure their real
       // height instead of reserving a fixed allowance that leaves Close underneath Layout.
-      list.style.maxHeight = `${Math.max(0, Math.min(300, this.vh - 16))}px`;
+      list.style.maxHeight = `${Math.max(0, Math.min(300, bounds.h))}px`;
       const chrome = this.linkerEl.offsetHeight - list.offsetHeight;
       const p = this.puckBox;
       const fitsBeside = p && (p.x - w - 10 >= 8 || p.x + p.w + 10 + w <= this.vw - 8);
-      const available = p && !fitsBeside ? Math.max(p.y - 18, this.vh - p.y - p.h - 18) : this.vh - 16;
+      const available = p && !fitsBeside ? Math.max(p.y - bounds.y - 10, bounds.y + bounds.h - p.y - p.h - 10) : bounds.h;
       list.style.maxHeight = `${Math.max(0, Math.min(300, available - chrome))}px`;
     }
     const hh = this.linkerEl.offsetHeight;
@@ -4440,7 +4490,7 @@ export class LodeFlowElement extends Base {
       const below = p.y + p.h + 6;
       at = { x: clamp(p.x + p.w - w, 8, Math.max(8, this.vw - w - 8)), y: below + hh <= this.vh - 8 ? below : clamp(p.y - hh - 6, 8, Math.max(8, this.vh - hh - 8)) };
     } else at = { x: (this.vw - w) / 2, y: 8 };
-    this.linkerEl.style.transform = `translate(${Math.round(at.x)}px, ${Math.round(at.y)}px)`;
+    at = this.placePopup(this.linkerEl, at, bounds);
     this.uiRects.push({ x: at.x, y: at.y, w, h: hh });
   }
 

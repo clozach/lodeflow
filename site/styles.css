@@ -2,7 +2,7 @@
 :root { color-scheme: light; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #263a31; background: #fff; --line: #d4ddd2; --page-surface: #fff; --page-hover: #f2f7ed; --page-focus: #b4cc45; --practice-bg: #eef4e9; --notice-bg: #fff4d8; --notice-fg: #754216; --notice-line: #e5cd95; }
 :root[data-theme="blueprint"] { color-scheme: dark; color: #e8f4ff; --line: #6c99b0; --page-surface: #0b2b41; --page-hover: #143a52; --page-focus: #ffe169; --practice-bg: #0b263d; --notice-bg: #3f341b; --notice-fg: #ffe4a4; --notice-line: #a38d4d; background: linear-gradient(#2d587d33 1px, transparent 1px), linear-gradient(90deg, #2d587d33 1px, transparent 1px), #102641; background-size: 24px 24px; }
 * { box-sizing: border-box; }
-body { margin: 0; height: 100vh; height: 100dvh; min-height: 550px; display: flex; flex-direction: column; }
+body { margin: 0; height: 100vh; height: 100dvh; min-height: 0; display: flex; flex-direction: column; }
 a { color: inherit; }
 button, select { font: inherit; }
 button, select, a { -webkit-tap-highlight-color: transparent; }
@@ -14,10 +14,10 @@ button:focus-visible, select:focus-visible, a:focus-visible, #practice:focus-vis
 .masthead { flex-shrink: 0; padding: 14px 24px 0; }
 .brand { display: inline-flex; text-decoration: none; }
 .brand-logo { display: block; width: auto; height: 50px; }
-main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 14px; padding: 8px 24px 20px; }
-.guide-frame { flex-shrink: 0; height: 180px; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
-#guide { display: block; min-width: 100%; height: 180px; --lf-font-size: 14px; --lf-node-shadow: none; }
-.practice-frame { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 300px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--practice-bg); }
+main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 4px 24px 12px; }
+.guide-frame { flex-shrink: 0; height: 1px; max-height: min(240px, 35dvh); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+#guide { display: block; min-width: 100%; height: 1px; --lf-font-size: 14px; --lf-node-shadow: none; }
+.practice-frame { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--practice-bg); }
 #flow { display: block; flex: 1; min-height: 0; width: 100%; height: 0; --lf-bg: #eef4e9; --lf-canvas-background: #eef4e9; }
 #flow[theme="blueprint"] { --lf-bg: #102641; --lf-canvas-background: linear-gradient(#2d587d33 1px, transparent 1px), linear-gradient(90deg, #2d587d33 1px, transparent 1px), #0b263d; }
 .demo-settings { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; font-size: 12px; line-height: 1.5; }
@@ -37,4 +37,4 @@ select { border: 1px solid var(--line); border-radius: 7px; padding: 6px 22px 6p
 .tab-notice { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
 .tab-notice button { flex-shrink: 0; background: var(--notice-bg); color: var(--notice-fg); }
 [hidden] { display: none !important; }
-@media (max-width: 700px) { .masthead { padding: 12px 12px 0; } .brand-logo { height: 42px; } main { padding: 8px 10px 10px; gap: 10px; } .guide-frame { height: 190px; } #guide { height: 190px; } .practice-frame { min-height: 320px; } .tab-notice { align-items: start; flex-direction: column; gap: 8px; } }
+@media (max-width: 700px) { .masthead { padding: 12px 12px 0; } .brand-logo { height: 42px; } main { padding: 4px 10px 10px; gap: 6px; } .tab-notice { align-items: start; flex-direction: column; gap: 8px; } }

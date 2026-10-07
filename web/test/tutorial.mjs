@@ -207,6 +207,28 @@ try {
         assert.equal((await docOf(page)).nodes[0].text, 'Unfinished draft');
       });
 
+      await scenario(browser, `${name}: compact instructions and scrolling Layout stay inside short viewports`, async page => {
+        await page.goto(url); await ready(page); await start(page);
+        await help(page); await page.locator('#appearance').selectOption('blueprint'); await page.locator('#flow [data-act="close-help"]').click();
+        await clickStep(page, 0); await clickStep(page, 1);
+        for (const viewport of [{width:393,height:700},{width:844,height:390},{width:393,height:360}]) {
+          await page.setViewportSize(viewport);
+          if (!await page.locator('#flow .panel').isVisible()) await page.locator('#flow [data-act="panel"]').click();
+          await page.waitForFunction(() => {
+            const f=document.querySelector('#flow'), p=f.shadowRoot.querySelector('.panel'), r=p.getBoundingClientRect(), v=f.getBoundingClientRect();
+            return r.left>=0 && r.right<=innerWidth && r.top>=Math.max(0,v.top) && r.bottom<=Math.min(innerHeight,v.bottom);
+          });
+          const frame=await page.locator('.guide-frame').boundingBox();
+          assert.ok(frame.height<=viewport.height*.35+.5, 'instructions leave room for practice');
+          assert.equal(await page.locator('#flow .panel').evaluate(p=>getComputedStyle(p).overflowY), 'auto');
+          if (await page.locator('#flow .panel [data-act="exhaustive"]').getAttribute('aria-expanded') === 'false') await page.locator('#flow .panel [data-act="exhaustive"]').click();
+          await page.locator('#flow .panel [data-act="tun-reset"]').scrollIntoViewIfNeeded();
+          assert.equal(await page.locator('#flow .panel [data-act="tun-reset"]').evaluate(b=>{const r=b.getBoundingClientRect(),root=b.getRootNode();return r.top>=0 && r.bottom<=innerHeight && b.contains(root.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}),true);
+          await page.locator('#flow .panel [data-act="tun-reset"]').click();
+          await page.keyboard.press('Escape');
+        }
+      }, {reducedMotion:'reduce'});
+
       await scenario(browser, `${name}: top-edge draft survives the tutorial resize and stays writable`, async page => {
         await page.goto(url); await ready(page);
         await help(page); await page.locator('#appearance').selectOption('blueprint'); await page.locator('#flow [data-act="close-help"]').click();

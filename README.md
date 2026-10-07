@@ -8,6 +8,25 @@ You never place anything by hand. The diagram re-lays itself out after every edi
 
 The tutorial starts with a connected example and six lessons for editing, adding nodes, linking, groups, layout and undo. Choose **Blueprint** from the appearance menu for the built-in alternate style. The demo allows at most **100 items total** (nodes, edges, groups and junctions). It saves the diagram and undo history only in this browser's localStorage; there is no account, server-side diagram storage or analytics. **Restore tutorial** is undoable. If browser storage is blocked or full, editing and undo still work for the current session.
 
+## Compared with other tools
+
+![Lodeflow compared with Flying Logic, React Flow + ELK, ELK, yFiles, Cytoscape.js and Mermaid: automatic layout, direct editing, node content, web integration and undo.](site/comparison.png)
+
+<details>
+<summary>Comparison sources and scope</summary>
+
+Documented capabilities reviewed October 6, 2026. Best-fit statements are qualitative judgments, not benchmark results or claims that other tools cannot support equivalent workflows. “Included” means the capability is supplied, not that a complete application needs no integration.
+
+- Flying Logic: [interface and layout](https://docs.flyinglogic.com/user-guide/the-document-window.html), [undo](https://docs.flyinglogic.com/user-guide/menus.html), [graph logic](https://docs.flyinglogic.com/user-guide/graph-logic.html).
+- React Flow: [layout integration](https://reactflow.dev/learn/layouting/layouting), [custom nodes](https://reactflow.dev/learn/customization/custom-nodes), [undo example](https://reactflow.dev/examples/interaction/undo-redo).
+- ELK: [Layered layout](https://eclipse.dev/elk/reference/algorithms/org-eclipse-elk-layered.html), [elkjs](https://github.com/kieler/elkjs).
+- yFiles: [layout toolkit](https://docs.yworks.com/yfiles-html/dguide/layout/index.html), [commercial distribution](https://docs.yworks.com/yfiles-html/dguide/yfiles_npm_module/).
+- [Cytoscape.js](https://js.cytoscape.org/): layouts, styling, graph analysis and extensions.
+- [Mermaid](https://mermaid.js.org/intro/): diagrams from text.
+- Lodeflow: the implementation and API documented in this README.
+
+</details>
+
 ## Run the tutorial locally
 
 ```sh

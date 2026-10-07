@@ -199,7 +199,7 @@ try {
     checkpoints = [...checkpoints, { key: entryKey(lastEntry(flow.getState())), before, after: -1 }].slice(-100);
     restartGuide();
     if (saving.kind === 'protected') saving = { kind: 'local' };
-    notice('Tutorial restored to blank. Undo brings your practice diagram back.');
+    notice('Tutorial restored to blank.');
     flow.focus({ preventScroll: true }); renderStatus();
     clearTimeout(progressTimer); progressTimer = setTimeout(persistProgress, 340);
   });

@@ -23,6 +23,8 @@ await new Promise((done) => server.listen(0, '127.0.0.1', done));
 const url = `http://127.0.0.1:${server.address().port}/lodeflow/`;
 const docOf = (page, id = 'flow') => page.locator(`#${id}`).evaluate((flow) => flow.doc);
 const ready = async (page) => { await page.waitForFunction(() => document.body.dataset.ready === 'true'); await page.locator('#flow .puck button').first().waitFor({ state: 'visible' }); };
+const undoHidden = async (page) => { const button = page.locator('#flow .puck [data-act="undo"]'); await button.waitFor({ state: 'hidden', timeout: 5000 }); assert.equal(await button.count(), 0, 'Undo is omitted from the toolbar'); };
+const undoVisible = (page) => page.locator('#flow .puck [data-act="undo"]').waitFor({ state: 'visible', timeout: 5000 });
 const current = (page, id) => page.waitForFunction((id) => document.body.dataset.step === id, id);
 const select = (page, ids) => page.locator('#flow').evaluate((flow, ids) => { flow.select(Array.isArray(ids) ? ids : [ids]); flow.showSelection(); flow.focus(); }, ids);
 const enterText = async (page, text) => { await page.locator('textarea.ed').fill(text); await page.keyboard.press('Enter'); };
@@ -131,8 +133,10 @@ try {
         await waitProgress(page, 4);
         const before = await docOf(page);
         await help(page); await page.locator('#appearance').selectOption('blueprint'); await page.locator('#reset').click(); await current(page, 'blank');
-        await waitProgress(page, -1); await page.reload(); await ready(page);
-        await page.locator('#flow').evaluate((flow) => flow.undo()); await current(page, 'label'); assert.deepEqual(await docOf(page), before);
+        await undoHidden(page);
+        assert.equal(await page.locator('#flow').evaluate(flow => flow.canUndo), true, 'Restore retains recoverable history while its toolbar action is hidden');
+        await waitProgress(page, -1); await page.reload(); await ready(page); await undoHidden(page);
+        await page.locator('#flow').evaluate((flow) => flow.undo()); await current(page, 'label'); await undoVisible(page); assert.deepEqual(await docOf(page), before);
         await page.locator('#flow').evaluate((flow) => flow.redo()); await current(page, 'blank');
         await page.locator('#flow').evaluate((flow) => flow.undo()); await current(page, 'label');
         const unrelated = { 'another-app:notes': 'Private notes', 'lodeflow:another-diagram:history': 'Other history', 'lodeflow:public-tutorial-v1': 'Old version data' };
@@ -141,19 +145,19 @@ try {
         await help(page);
         assert.equal(await page.locator('#hard-reset').getAttribute('title'), 'All data storage is local-only. Clicking this button resets the tutorial and deletes all your edits. ⚠️ Cannot be undone.');
         await page.evaluate(() => { window.removedKeys = []; const remove = Storage.prototype.removeItem; Storage.prototype.removeItem = function(key) { window.removedKeys.push(key); return remove.call(this, key); }; });
-        await page.locator('#hard-reset').click(); await current(page, 'blank');
+        await page.locator('#hard-reset').click(); await current(page, 'blank'); await undoHidden(page);
         assert.equal(countItems(await docOf(page)), 0); assert.equal(countItems(await docOf(page, 'guide')), 0);
         assert.equal(await page.locator('textarea.ed').count(), 0);
         assert.equal(await page.locator('#flow').evaluate((flow) => flow.canUndo || flow.canRedo), false);
         const saved = await page.evaluate(({ key, progressKey, appearanceKey, unrelated }) => ({ removed: window.removedKeys, state: JSON.parse(localStorage.getItem(key)), appearance: localStorage.getItem(appearanceKey), history: localStorage.getItem(`${key}:history`), progress: JSON.parse(localStorage.getItem(progressKey)), unrelated: Object.fromEntries(Object.keys(unrelated).map((key) => [key, localStorage.getItem(key)])) }), { key, progressKey, appearanceKey, unrelated });
         assert.deepEqual(saved.removed, [key, `${key}:history`, progressKey, appearanceKey]);
         assert.equal(saved.appearance, null); assert.equal(saved.history, null); assert.equal(saved.progress.reached, -1); assert.equal(saved.state.history.entries.length, 0); assert.deepEqual(saved.unrelated, unrelated);
-        await page.reload(); await ready(page); await current(page, 'blank');
+        await page.reload(); await ready(page); await current(page, 'blank'); await undoHidden(page);
         await page.locator('#flow').evaluate((flow) => flow.undo()); assert.equal(countItems(await docOf(page)), 0);
-        await start(page); await select(page, (await docOf(page)).nodes[0].id); await edit(page, 'Retained saved edit');
+        await start(page); await undoVisible(page); await select(page, (await docOf(page)).nodes[0].id); await edit(page, 'Retained saved edit');
         await page.waitForFunction((key) => localStorage.getItem(key)?.includes('Retained saved edit'), key);
         await page.evaluate(() => { Storage.prototype.removeItem = () => { throw new DOMException('Blocked', 'SecurityError'); }; });
-        await help(page); await page.locator('#hard-reset').click(); assert.equal(countItems(await docOf(page)), 0); assert.match(await page.locator('#save-status').textContent(), /Session only/);
+        await help(page); await page.locator('#hard-reset').click(); await undoHidden(page); assert.equal(countItems(await docOf(page)), 0); assert.match(await page.locator('#save-status').textContent(), /Session only/);
       });
 
       await scenario(browser, `${name}: capacity rejects atomically; oversized saved history stays protected`, async (page) => {
@@ -195,7 +199,7 @@ try {
         for (let index = 0; index < 4; index++) await clickStep(other, index);
         await waitProgress(other, 4); await page.locator('#tab-notice').waitFor({ state: 'visible' });
         assert.equal(await page.locator('textarea.ed').inputValue(), 'Unfinished draft');
-        await page.locator('#load-saved').click(); await current(page, 'label');
+        await page.locator('#load-saved').click(); await current(page, 'label'); await undoHidden(page);
         assert.equal(countItems(await docOf(page)), 5);
         assert.equal((await docOf(page)).nodes[0].text, 'My first idea', 'explicit loading displays the chosen saved words');
         assert.equal(await page.locator('textarea.ed').count(), 0, 'explicit loading ends the old draft');

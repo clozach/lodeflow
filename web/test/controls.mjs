@@ -1,4 +1,4 @@
-// Diagram toolbar, touch hints and explicitly destructive reset: real browser regressions.
+// Diagram toolbar, loaded Undo baseline, touch hints and destructive reset: browser regressions.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -18,6 +18,11 @@ const empty = { nodes: [], edges: [], groups: [] };
 const results = [];
 const settled = (page) => page.waitForTimeout(160);
 const flow = (page, fn, arg) => page.locator('lode-flow').evaluate(fn, arg);
+const waitUndo = (page, visible) => page.waitForFunction((visible) => !!document.querySelector('lode-flow').shadowRoot.querySelector('.puck [data-act="undo"]') === visible, visible);
+async function historyFixture(page) {
+  await reset(page);
+  return flow(page, (f) => { f.select(['a']); f.select(['b']); return f.getState(); });
+}
 async function reset(page, doc = seed, sel = []) {
   await flow(page, (f, { doc, sel }) => { f.closeHelp(); f.closePanel(); f.closeLinker(); f.setDoc(doc, { discardPendingSave: true }); f.select(sel); f.focus(); }, { doc, sel });
   await settled(page);
@@ -223,6 +228,113 @@ try {
         t = await toolbar(page); assert.equal(t.emptyHidden, true); assert.equal(t.emptyText, '');
         assert.deepEqual(t.buttons.map((b) => b.act), ['help']);
         await flow(page, (f) => f.removeAttribute('readonly'));
+      });
+
+      await check(`${name}: accepted loads hide Undo while history and Redo remain recoverable`, async () => {
+        const saved = await historyFixture(page);
+        await waitUndo(page, true);
+        for (const load of ['state', 'replace', 'same-content', 'same-object']) {
+          await flow(page, (f, saved) => { f.setState(saved); f.select(['a']); }, saved);
+          await waitUndo(page, true);
+          const report = await flow(page, (f, { saved, load }) => {
+            const before = f.getState();
+            if (load === 'state') f.setState(saved);
+            else if (load === 'replace') f.setDoc({ nodes: [], edges: [] }, { resetHistory: false });
+            else if (load === 'same-content') f.setDoc(f.doc, { resetHistory: false });
+            else f.doc = f.doc;
+            return { before, after: f.getState(), canUndo: f.canUndo };
+          }, { saved, load });
+          await waitUndo(page, false);
+          assert.equal(report.canUndo, true, `${load}: hiding the control retains usable history`);
+          assert.deepEqual(Object.keys(report.after).sort(), ['doc', 'history', 'view'], 'the display baseline is never persisted');
+          if (load === 'state') assert.deepEqual(report.after, saved);
+          else if (load === 'same-object') assert.deepEqual(report.after, report.before, 'identical property assignment preserves the existing no-op history behavior');
+          else {
+            assert.equal(report.after.history.index, report.before.history.index + 1);
+            assert.equal(report.after.history.entries.at(-1).kind, 'load');
+          }
+        }
+        const withRedo = await flow(page, (f, saved) => { f.setState(saved); f.undo(); return f.getState(); }, saved);
+        await flow(page, (f, state) => f.setState(state), withRedo);
+        await waitUndo(page, false);
+        await page.waitForFunction(() => !!document.querySelector('lode-flow').shadowRoot.querySelector('.puck [data-act="redo"]'));
+        assert.equal(await flow(page, (f) => f.canRedo), true, 'Redo keeps its existing loaded-history visibility');
+        await flow(page, (f) => f.setDoc(f.doc, { discardPendingSave: true }));
+        await waitUndo(page, false);
+        assert.equal(await flow(page, (f) => f.canUndo), false, 'hard replacement still clears history');
+      });
+
+      await check(`${name}: first selection, view, edit or history action reveals loaded Undo`, async () => {
+        const saved = await historyFixture(page);
+        const withRedo = await flow(page, (f, saved) => { f.setState(saved); f.undo(); return f.getState(); }, saved);
+        for (const action of ['selection', 'zoom', 'edit', 'keyboard-undo', 'api-undo', 'keyboard-redo', 'api-redo', 'rewind', 'fast-forward']) {
+          const state = action.includes('redo') || action === 'fast-forward' ? withRedo : saved;
+          await flow(page, (f, state) => { f.setState(state); f.focus(); }, state);
+          await waitUndo(page, false);
+          if (action === 'selection') await flow(page, (f) => f.select(['a']));
+          else if (action === 'zoom') await page.keyboard.press('=');
+          else if (action === 'edit') {
+            await flow(page, (f) => f.startEdit('a'));
+            await page.locator('textarea').fill('First edited');
+            await page.keyboard.press('Enter');
+          } else if (action === 'keyboard-undo') await page.keyboard.press('ControlOrMeta+z');
+          else if (action === 'keyboard-redo') await page.keyboard.press('ControlOrMeta+Shift+z');
+          else await flow(page, (f, action) => f[action === 'api-undo' ? 'undo' : action === 'api-redo' ? 'redo' : action === 'fast-forward' ? 'fastForward' : 'rewind'](), action);
+          await waitUndo(page, true);
+          assert.equal(await flow(page, (f) => f.canUndo), true, action);
+          assert.equal(await page.locator('.puck [data-act="undo"]').isEnabled(), true, action);
+        }
+        await flow(page, (f, saved) => { f.setState(saved); f.select(f.selection); f.focus(); f.openHelp(); f.closeHelp(); }, saved);
+        await waitUndo(page, false);
+        assert.deepEqual(await flow(page, (f) => f.getState()), saved, 'no-op selection, focus and Help do not reveal Undo or change history');
+        await flow(page, (f) => f.setDoc({ nodes: [], edges: [] }, { resetHistory: false }));
+        await waitUndo(page, false);
+        await flow(page, (f) => f.undo());
+        await waitUndo(page, true);
+        assert.equal(await flow(page, (f) => f.doc.nodes.length), 2, 'Undo can recover a host Load while its control was hidden');
+      });
+
+      await check(`${name}: rejected document or history loads preserve Undo visibility`, async () => {
+        const saved = await historyFixture(page);
+        const oversized = { ...saved.doc, nodes: Array.from({ length: 5 }, (_, i) => ({ id: `over-${i}`, text: 'Too many' })), edges: [], groups: [], junctions: [] };
+        for (const visible of [false, true]) {
+          await flow(page, (f, { saved, visible }) => { f.setState(saved); if (visible) f.select(['a']); f.setAttribute('max-items', '4'); }, { saved, visible });
+          await waitUndo(page, visible);
+          for (const load of ['document', 'state', 'history']) {
+            const report = await flow(page, (f, { load, oversized, saved }) => {
+              const before = f.getState();
+              let rejected = false;
+              try {
+                if (load === 'document') f.setDoc(oversized, { resetHistory: false });
+                else if (load === 'state') f.setState({ ...saved, doc: oversized });
+                else f.setState({ ...saved, history: { ...saved.history, docs: [oversized] } });
+              } catch (e) { rejected = e instanceof RangeError; }
+              return { rejected, before, after: f.getState(), canUndo: f.canUndo };
+            }, { load, oversized, saved });
+            assert.equal(report.rejected, true, load);
+            assert.deepEqual(report.after, report.before, load);
+            assert.equal(report.canUndo, true);
+            await waitUndo(page, visible);
+          }
+          await flow(page, (f) => f.removeAttribute('max-items'));
+        }
+      });
+
+      await check(`${name}: saved reload hides Undo without discarding browser history`, async () => {
+        const saved = await historyFixture(page);
+        await flow(page, (f) => { f.setAttribute('storage-key', 'undo-reload'); f.saveNow(); });
+        const storage = await page.evaluate(() => ({ doc: localStorage.getItem('lodeflow:undo-reload'), history: localStorage.getItem('lodeflow:undo-reload:history') }));
+        assert.ok(storage.doc && storage.history);
+        await page.reload();
+        await page.evaluate(() => { const f = document.createElement('lode-flow'); f.setAttribute('storage-key', 'undo-reload'); document.body.append(f); f.tun.animation = 0; });
+        await page.waitForFunction(() => document.querySelector('lode-flow').layoutInfo && document.querySelector('lode-flow').canUndo);
+        await waitUndo(page, false);
+        assert.deepEqual(await flow(page, (f) => f.getState().history), saved.history);
+        assert.deepEqual(await page.evaluate(() => ({ doc: localStorage.getItem('lodeflow:undo-reload'), history: localStorage.getItem('lodeflow:undo-reload:history') })), storage, 'startup does not write a visibility state');
+        await flow(page, (f) => { f.removeAttribute('storage-key'); f.focus(); });
+        await page.keyboard.press('ControlOrMeta+z');
+        await waitUndo(page, true);
+        assert.deepEqual(await flow(page, (f) => f.selection), ['a'], 'saved selection history is still usable');
       });
 
       await check(`${name}: destructive reset drops draft and pending quota save`, async () => {

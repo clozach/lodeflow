@@ -301,6 +301,8 @@ export class LodeFlowElement extends Base {
   private pendingGraphReveal: 'layout' | 'scroll' | null = null;
   private view: ViewState = { cam: { x: 0, y: 0, z: 1, r: 0 }, follow: true, sel: [] };
   private hist = new History();
+  /** Loads keep recoverable history, but Undo enters the toolbar only after an action. */
+  private undoDisplay: 'awaiting-action' | 'active' = 'awaiting-action';
   private tun: Tunables = { ...TUNABLE_DEFAULTS };
   private eng: LayoutEngine | null = null;
   private geo: Geo | null = null;
@@ -463,7 +465,11 @@ export class LodeFlowElement extends Base {
     return this._doc;
   }
   set doc(d: FlowDoc) {
-    if (d === this._doc) return;
+    if (d === this._doc) {
+      this.undoDisplay = 'awaiting-action';
+      this.schedule();
+      return;
+    }
     this.setDoc(d);
   }
 
@@ -479,7 +485,9 @@ export class LodeFlowElement extends Base {
     this.blockedStorageKey = null;
     this.diveOpened.clear();
     if (opts.resetHistory === false) {
+      this.undoDisplay = 'awaiting-action';
       this.commit('Load', 'load', { doc, view: { sel: [] } });
+      this.schedule();
       return;
     }
     this.finishEdit('discard');
@@ -493,6 +501,7 @@ export class LodeFlowElement extends Base {
     // A new document chooses its own direction; the previous one's choice must not stick.
     this.autoPick = null;
     this.hist.clear();
+    this.undoDisplay = 'awaiting-action';
     this.invalidate(true);
     this.emitHistory();
   }
@@ -1225,6 +1234,7 @@ export class LodeFlowElement extends Base {
       this.schedule();
     }
     const e = this.hist.push({ label, kind, before, after: this.snapshot(), t: Date.now(), where: opts.where ?? null }, opts.coalesce ?? 0);
+    this.undoDisplay = kind === 'load' ? 'awaiting-action' : 'active';
     if (docChanged) this.emit('lode-change', { doc: this._doc, label });
     if (selChanged) this.emit('lode-select', { selection: [...this.view.sel] });
     this.emitHistory();
@@ -1233,6 +1243,7 @@ export class LodeFlowElement extends Base {
   }
 
   private restore(s: Snapshot, e: Entry) {
+    this.undoDisplay = 'active';
     const docChanged = s.doc !== this._doc;
     const selChanged = s.view.sel.join('\u0000') !== this.view.sel.join('\u0000');
     if (docChanged) {
@@ -2565,7 +2576,7 @@ export class LodeFlowElement extends Base {
 
   private renderPuck() {
     this.syncLinkerReceipt();
-    const u = this.hist.peekUndo();
+    const u = this.undoDisplay === 'active' ? this.hist.peekUndo() : null;
     const r = this.hist.peekRedo();
     // Add stays available in the diagram toolbar and follows N's selection context.
     const add = !this.readonly_;

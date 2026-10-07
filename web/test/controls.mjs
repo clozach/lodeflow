@@ -13,6 +13,7 @@ const server = createServer((req, res) => {
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const url = `http://127.0.0.1:${server.address().port}`;
 const seed = { nodes: [{ id: 'a', text: 'First', group: 'g' }, { id: 'b', text: 'Next' }], groups: [{ id: 'g', text: 'Group' }], edges: [{ id: 'ab', from: 'a', to: 'b', label: 'leads to' }], settings: { orientation: 'lr' } };
+const groupSeed = { ...seed, nodes: [seed.nodes[0], { ...seed.nodes[1], group: 'g2' }], groups: [...seed.groups, { id: 'g2', text: 'Closed group', collapsed: true }] };
 const empty = { nodes: [], edges: [], groups: [] };
 const results = [];
 const settled = (page) => page.waitForTimeout(160);
@@ -38,6 +39,23 @@ function assertCentered(t) {
   assert.ok(Math.abs(t.puck.y + t.puck.h / 2 - (t.frame.y + t.frame.h / 2)) < 2, 'empty toolbar vertically centered');
 }
 const visibleHints = (page) => flow(page, (f) => [...f.shadowRoot.querySelectorAll('kbd,.keys,.key-hint')].filter((n) => n.getBoundingClientRect().width && n.getBoundingClientRect().height && getComputedStyle(n).display !== 'none' && !n.closest('[hidden]')).map((n) => n.textContent));
+async function assertGroupCaptions(page, touch) {
+  const captions = await flow(page, (f) => f.doc.groups.flatMap((g) => [...f.shadowRoot.querySelectorAll(`[data-chev="${g.id}"]`)].map((b) => ({ collapsed: !!g.collapsed, title: b.title, aria: b.getAttribute('aria-label') }))));
+  assert.equal(captions.length, 4, 'both chevrons of expanded and collapsed groups are covered');
+  for (const c of captions) {
+    const expected = `${c.collapsed ? 'Expand' : 'Collapse'} group${touch ? '' : ' (C)'}`;
+    assert.equal(c.title, expected); assert.equal(c.aria, expected);
+  }
+}
+async function scrollNudge(page) {
+  await page.evaluate(() => { const input = document.createElement('input'); input.id = 'outside'; document.body.append(input); input.focus(); });
+  const r = await page.locator('lode-flow').boundingBox();
+  await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2);
+  await page.mouse.wheel(0, 100); await settled(page);
+  const text = await page.locator('.nudge:visible').textContent();
+  await page.locator('#outside').evaluate((n) => n.remove());
+  return text;
+}
 
 async function check(name, fn) {
   try { await fn(); results.push({ name, ok: true }); console.log(`✓ ${name}`); }
@@ -165,14 +183,21 @@ try {
         await tap('.puck [data-act="addnode"]');
         assert.equal(await page.locator('textarea').count(), 1, 'first Add tap opens its editor');
         assert.deepEqual(await visibleHints(page), []);
-        await reset(page, empty);
+        await reset(page, groupSeed);
         await page.locator('.puck [data-act="help"]').click(); await settled(page);
         assert.match(await page.locator('.help').textContent(), /Gestures and keys/);
+        await assertGroupCaptions(page, false);
         await tap('.help tr');
         assert.equal(await page.locator('.help h2 span').textContent(), 'Gestures', 'an open desktop legend switches after actual touch');
         assert.deepEqual(await visibleHints(page), []);
+        await assertGroupCaptions(page, true);
         await tap('[data-act="close-help"]');
         assert.equal(await page.locator('.help:not([hidden])').count(), 0, 'Close remains tappable');
+        assert.equal(await scrollNudge(page), 'Tap the diagram to scroll it');
+        await page.locator('.puck [data-act="help"]').click(); await settled(page);
+        await assertGroupCaptions(page, false);
+        await flow(page, (f) => f.closeHelp());
+        assert.match(await scrollNudge(page), /^Click the diagram to scroll it · (⌘|Ctrl)-scroll zooms$/, 'desktop scroll wording remains');
       });
 
       if (name === 'chromium') for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 800 }]) {
@@ -182,6 +207,12 @@ try {
             await touch.goto(url);
             await touch.evaluate(() => { const f = document.createElement('lode-flow'); document.body.append(f); f.tun.animation = 0; });
             await touch.waitForFunction(() => document.querySelector('lode-flow')?.layoutInfo);
+            await reset(touch, groupSeed);
+            await assertGroupCaptions(touch, true);
+            assert.equal(await scrollNudge(touch), 'Tap the diagram to scroll it');
+            await touch.locator('.glabel[data-gid="g"] .chev').tap(); await settled(touch);
+            assert.equal(await flow(touch, (f) => f.doc.groups.find((g) => g.id === 'g').collapsed), true, 'first chevron tap still folds the group');
+            await assertGroupCaptions(touch, true);
             await reset(touch, empty); assertBookends(await toolbar(touch)); assertCentered(await toolbar(touch));
             await touch.locator('.puck [data-act="help"]').tap(); await settled(touch);
             assert.equal(await touch.locator('.help h2 span').textContent(), 'Gestures');

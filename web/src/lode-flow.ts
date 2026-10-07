@@ -1068,6 +1068,7 @@ export class LodeFlowElement extends Base {
       requestAnimationFrame(() => {
         if (this.vp.classList.contains('touch') === this.touchContext) return;
         this.vp.classList.toggle('touch', this.touchContext);
+        this.dirtyDom = true;
         this.dirtySel = true;
         this.puckKey = '';
         this.magSizes = null;
@@ -1478,10 +1479,11 @@ export class LodeFlowElement extends Base {
         // Only when it changes: rewriting the icon under a press (an edit ending on pointerdown
         // redraws) detached the pressed element, so the click did nothing and focus fell to the page.
         const state = collapsed ? 'shut' : 'open';
-        if (chev.dataset.state === state) continue;
-        chev.dataset.state = state;
-        chev.innerHTML = collapsed ? ICON.expand : ICON.collapse;
-        chev.title = collapsed ? 'Expand group (C)' : 'Collapse group (C)';
+        if (chev.dataset.state !== state) {
+          chev.dataset.state = state;
+          chev.innerHTML = collapsed ? ICON.expand : ICON.collapse;
+        }
+        chev.title = `${collapsed ? 'Expand group' : 'Collapse group'}${this.touchContext ? '' : ' (C)'}`;
         chev.setAttribute('aria-label', chev.title);
       }
       if (this.editing?.id !== g.id) {
@@ -3578,7 +3580,7 @@ export class LodeFlowElement extends Base {
     const focused = this.root.activeElement != null;
     if (!zoomIntent && !rotateIntent) {
       if (this.wheelMode === 'modifier' || (this.wheelMode === 'auto' && !focused)) {
-        this.nudge(p, `Click the diagram to scroll it · ${IS_MAC ? '⌘' : 'Ctrl'}-scroll zooms`);
+        this.nudge(p, this.touchContext ? 'Tap the diagram to scroll it' : `Click the diagram to scroll it · ${IS_MAC ? '⌘' : 'Ctrl'}-scroll zooms`);
         return; // let the page scroll
       }
     }

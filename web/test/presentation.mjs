@@ -39,6 +39,10 @@ try {
       await page.waitForTimeout(350);
       const graph = page.locator('#graph');
       const nodes = graph.locator('.node[data-id]');
+      const actionsRendered = (disabled) => page.waitForFunction((disabled) => {
+        const nodes = [...document.getElementById('graph').shadowRoot.querySelectorAll('.node[data-id]')];
+        return nodes.length === 3 && nodes.every((node) => node.disabled === disabled.includes(node.dataset.id));
+      }, disabled, { timeout: 5000 });
       const style = await graph.evaluate((f) => {
         const v = f.shadowRoot.querySelector('.vp');
         return { bg: getComputedStyle(v).backgroundColor, image: getComputedStyle(v).backgroundImage, tab: v.tabIndex, role: v.getAttribute('role'), chrome: [...f.shadowRoot.querySelectorAll('.ui,.ring,.chev,.nudge,.marquee')].every((n) => getComputedStyle(n).display === 'none') };
@@ -82,7 +86,7 @@ try {
       // Availability is host metadata, including IDs supplied before a node exists.
       const availabilityBefore = await graph.evaluate((f) => JSON.stringify(f.getState()));
       await graph.evaluate((f) => { window.actionLayouts = 0; f.addEventListener('lode-layout', () => window.actionLayouts++); const ids = ['a', 'c', 'future']; f.disabledNodeIds = ids; ids.push('b'); });
-      await page.waitForTimeout(100);
+      await actionsRendered(['a', 'c']);
       assert.deepEqual(await graph.evaluate((f) => f.disabledNodeIds), ['a', 'c', 'future']);
       assert.deepEqual(await nodes.evaluateAll((ns) => ns.map((n) => [n.disabled, n.tabIndex])), [[true, -1], [false, 0], [true, -1]]);
       assert.equal(await graph.evaluate((f) => JSON.stringify(f.getState())), availabilityBefore, 'availability does not alter content, camera or history');
@@ -96,7 +100,8 @@ try {
       for (const key of ['ArrowLeft', 'ArrowRight', 'Home', 'End']) { await page.keyboard.press(key); assert.equal(await graph.evaluate((f) => f.shadowRoot.activeElement.dataset.id), 'b'); }
       await graph.evaluate((f) => { const marker = document.createElement('button'); marker.id = 'before-graph'; marker.textContent = 'Before graph'; f.before(marker); marker.focus(); });
       await page.keyboard.press('Tab'); assert.equal(await graph.evaluate((f) => f.shadowRoot.activeElement.dataset.id), 'b', 'Tab skips disabled steps');
-      await graph.evaluate((f) => { f.disabledNodeIds = []; document.getElementById('before-graph').remove(); }); await page.waitForTimeout(100);
+      await graph.evaluate((f) => { f.disabledNodeIds = []; document.getElementById('before-graph').remove(); });
+      await actionsRendered([]);
       assert.equal(await nodes.nth(0).isEnabled(), true);
 
       // Already-visible selection requires neither camera movement nor page scrolling.

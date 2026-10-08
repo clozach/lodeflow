@@ -46,10 +46,10 @@ export function panBy(c: Camera, dx: number, dy: number): Camera {
   return { ...c, x: c.x - wx, y: c.y - wy };
 }
 
-/** Snap within three degrees of upright, including either side of a complete turn. */
+/** Snap within three degrees of each 45-degree display angle, in either direction. */
 export function snapRotation(r: number): number {
-  const distance = Math.abs(Math.atan2(Math.sin(r), Math.cos(r)));
-  return distance <= Math.PI / 60 + 1e-12 ? 0 : r;
+  const step = Math.PI / 4, index = Math.round(r / step), target = index * step;
+  return Math.abs(r - target) <= Math.PI / 60 + 1e-12 ? (index % 8 === 0 ? 0 : target) : r;
 }
 
 /**

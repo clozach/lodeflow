@@ -51,6 +51,16 @@ try {
    await p.keyboard.press(']');near((await cam(p)).r,rad(15),'keyboard leaves zero');
    await p.keyboard.press('r');near((await cam(p)).r,0,'upright shortcut');
    results.push(`${name}: keyboard rotation uses same snap`);
+   for(const target of [45,90,135,180,225,270,315]){
+    for(const sign of [-1,1]){
+     await seed(p,target+sign*10);await wheel(p,-sign*8);near((await cam(p)).r,rad(target),'wheel common angle');
+     await p.keyboard.press('ControlOrMeta+z');near((await cam(p)).r,rad(target+sign*10),'common angle undo');
+     await p.keyboard.press('ControlOrMeta+Shift+z');near((await cam(p)).r,rad(target),'common angle redo');
+    }
+    await seed(p,target+17);await p.keyboard.press('[');near((await cam(p)).r,rad(target),'keyboard common angle');
+    await seed(p,target);let intended=rad(target);for(let i=0;i<4;i++)intended+=await wheel(p,1);near((await cam(p)).r,intended,'small ticks leave common angle');
+   }
+   results.push(name+': all seven added angles, both wheel directions, keys, history and small-tick escape');
    if(name==='chromium'){
     const cdp=await context.newCDPSession(p);
     const points=(degrees,radius=100)=>[0,1].map((id)=>({id,x:450+(id?1:-1)*radius*Math.cos(rad(degrees)),y:450+(id?1:-1)*radius*Math.sin(rad(degrees))}));
@@ -70,6 +80,16 @@ try {
      const final=await cam(p);await p.keyboard.press('ControlOrMeta+z');near((await cam(p)).r,rad(sign*20),'one undo restores whole touch gesture');
      await p.keyboard.press('ControlOrMeta+Shift+z');assert.deepEqual(await cam(p),final);
     }
+    for(const target of [45,90,135,180,225,270,315]) for(const sign of [-1,1]){
+     await seed(p,target+sign*20);
+     await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:points(0)});
+     await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:points(-sign*18,120)});await p.waitForTimeout(50);
+     near((await cam(p)).r,rad(target),'touch common angle');near((await cam(p)).z,1.2,'common angle pinch scale');
+     await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:points(-sign*16,120)});await p.waitForTimeout(50);
+     near((await cam(p)).r,rad(target+sign*4),'touch leaves common angle band');
+     await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+    }
+    results.push('chromium: all seven added angles, both touch directions, pinch and band exit');
     results.push('chromium: real two-finger twist, threshold crossing, zoom and one-step history');
     // Tap each node separately: selection replaces rather than accumulates without a keyboard modifier.
     await p.locator('lode-flow').evaluate(f=>f.fit());await p.waitForTimeout(100);

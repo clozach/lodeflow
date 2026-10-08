@@ -53,4 +53,10 @@ check(() => assert.deepEqual(stop({ x: 0, y: 0 }, box(-900, -900, 3000, 3000), W
 for (const turn of [-720, -360, 0, 360, 720]) for (const offset of [-3, -2.9, 0, 2.9, 3]) check(() => assert.equal(snapRotation((turn + offset) * Math.PI / 180), 0, 'upright boundary'));
 for (const angle of [-180, -3.001, 3.001, 90, 356.999, 363.001]) check(() => near(snapRotation(angle * Math.PI / 180), angle * Math.PI / 180, 'outside snap zone'));
 
+for (const turn of [-720, -360, 0, 360, 720]) for (let target = 0; target < 360; target += 45) {
+  const expected = target === 0 ? 0 : (turn + target) * Math.PI / 180;
+  for (const offset of [-3, -2.9, 0, 2.9, 3]) check(() => near(snapRotation((turn + target + offset) * Math.PI / 180), expected, 'common angle boundary'));
+  for (const offset of [-3.001, 3.001, 22.5]) check(() => { const a = (turn + target + offset) * Math.PI / 180; near(snapRotation(a), a, 'between common angle bands'); });
+}
+
 console.log(`✓ geometry: ${checks} edge-pan and rotation checks`);

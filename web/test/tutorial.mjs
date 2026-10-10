@@ -55,7 +55,7 @@ try {
         assert.equal(await page.locator('#flow').getAttribute('empty-hint'), '');
         assert.deepEqual(await page.locator('#flow .kickstarter').evaluate((hint) => [...hint.children].map((line) => line.textContent)), ['Double-click anywhere', 'to add the first node', 'or']);
         assert.equal(await page.locator('#appearance').isVisible(), false);
-        assert.equal(await page.locator('#flow .puck button:visible').count(), 2, 'fresh canvas has only Add and Help');
+        assert.equal(await page.locator('#flow .puck button:visible').count(), 3, 'fresh canvas has Add, Fullscreen and Help');
         const blank = await page.locator('#flow .vp').boundingBox();
         const add = await page.locator('#flow [data-act="addnode"]').boundingBox();
         assert.ok(Math.abs(add.y + add.height / 2 - (blank.y + blank.height / 2)) < 50, 'kickoff controls sit in the middle');

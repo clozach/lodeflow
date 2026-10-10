@@ -774,6 +774,20 @@ export function ungroup(doc: FlowDoc, gid: string): FlowDoc {
   };
 }
 
+/** Lift selected nodes one level without dissolving their groups or changing their connections. */
+export function removeNodesFromGroup(doc: FlowDoc, ids: Iterable<string>): FlowDoc {
+  const selected = new Set(ids);
+  let changed = false;
+  const nodes = doc.nodes.map((node) => {
+    if (!selected.has(node.id) || !node.group) return node;
+    const group = groupById(doc, node.group);
+    if (!group) return node;
+    changed = true;
+    return { ...node, group: group.parent ?? null };
+  });
+  return changed ? { ...doc, nodes } : doc;
+}
+
 export function setCollapsed(doc: FlowDoc, gid: string, collapsed: boolean): FlowDoc {
   return { ...doc, groups: doc.groups.map((g) => (g.id === gid ? { ...g, collapsed } : g)) };
 }

@@ -1,0 +1,50 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Node links, group removal and fullscreen</title>
+<style>
+  body { margin: 0; padding: 28px; font: 16px/1.45 system-ui; background: #faf8f4; color: #1f1c18; }
+  body.blueprint { background: #0b3454; color: #eef9ff; }
+  main { max-width: 780px; margin: auto; }
+  h1 { font-size: 24px; margin: 0 0 10px; }
+  button { padding: 8px 12px; margin: 0 4px 10px 0; font: inherit; cursor: pointer; }
+  .frame { overflow: hidden; border: 1px solid #b8b8b8; border-radius: 8px; height: 480px; }
+  lode-flow { height: 480px; }
+  output { display: block; white-space: pre-wrap; margin-top: 12px; font: 13px/1.5 monospace; }
+</style>
+<main>
+  <h1>Node links, group removal and fullscreen</h1>
+  <p>A diagram inside a narrow, clipped article. Use its own controls to get more room.</p>
+  <nav>
+    <button id="standard">Standard</button><button id="blueprint">Blueprint</button>
+    <button id="reset">Reset fixture</button><button id="inspect">Inspect document and history</button>
+  </nav>
+  <div class="frame"><lode-flow id="flow" theme="light" node-width="220"></lode-flow></div>
+  <output id="readback" aria-live="polite"></output>
+</main>
+<script>
+  const script = document.createElement('script');
+  script.src = new URLSearchParams(location.search).has('before') ? './fixture-controls-before.iife.js' : '../dist/lode-flow.iife.js';
+  script.onload = () => {
+    const flow = document.querySelector('#flow');
+    const seed = { nodes: [
+      { id: 'source', text: 'Original source message\nhttps://example.com/messages?conversation=177', group: 'inner' },
+      { id: 'prepare', text: 'Prepare the first MP3 collection', group: 'inner' },
+      { id: 'review', text: 'Review member playback', group: 'outer' },
+      { id: 'finish', text: '🏁 First customer' }
+    ], groups: [{ id: 'outer', text: 'Members’ Library' }, { id: 'inner', text: 'MP3 collection', parent: 'outer' }],
+    edges: [{ id: 'source-prepare', from: 'source', to: 'prepare', label: 'source' }, { id: 'prepare-review', from: 'prepare', to: 'review' }, { id: 'review-finish', from: 'review', to: 'finish' }], settings: { orientation: 'lr', compactness: 'comfortable' } };
+    const inspect = () => {
+      const state = flow.getState();
+      document.querySelector('#readback').textContent = JSON.stringify({ document: flow.doc, selection: flow.selection, history: state.history }, null, 2);
+    };
+    const reset = () => { flow.setDoc(seed); flow.select(['source']); flow.fit(); inspect(); };
+    document.querySelector('#reset').onclick = reset;
+    document.querySelector('#inspect').onclick = inspect;
+    document.querySelector('#standard').onclick = () => { document.body.classList.remove('blueprint'); flow.setAttribute('theme', 'light'); };
+    document.querySelector('#blueprint').onclick = () => { document.body.classList.add('blueprint'); flow.setAttribute('theme', 'blueprint'); };
+    flow.addEventListener('lode-change', inspect);
+    flow.addEventListener('lode-history', inspect);
+    reset();
+  };
+  document.head.append(script);
+</script>

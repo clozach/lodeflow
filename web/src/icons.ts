@@ -25,6 +25,7 @@ export const ICON = {
   redo: s('<path d="M10.5 3.5l3 3-3 3"/><path d="M13.5 6.5H6a3.5 3.5 0 000 7h3"/>'),
   magnet: s('<path d="M3.5 2.5v6a4.5 4.5 0 009 0v-6"/><path d="M3.5 5.5h3M9.5 5.5h3"/><path d="M6.5 2.5v6a1.5 1.5 0 003 0v-6"/>'),
   fit: s('<path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/>'),
+  exitFullscreen: s('<path d="M1.5 5.5h4v-4M10.5 1.5v4h4M14.5 10.5h-4v4M5.5 14.5v-4h-4"/>'),
   upright: s('<path d="M8 13.5V3M4.5 6.5L8 3l3.5 3.5"/>'),
   help: s('<circle cx="8" cy="8" r="6"/><path d="M6.3 6.2a1.8 1.8 0 113 1.4c-.7.5-1.3.9-1.3 1.8M8 11.5v.1"/>'),
   close: s('<path d="M4 4l8 8M12 4l-8 8"/>'),

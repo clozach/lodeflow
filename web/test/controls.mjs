@@ -82,17 +82,65 @@ try {
           await reset(page, doc);
           const t = await toolbar(page); assertBookends(t); assertCentered(t);
           assert.equal(t.emptyHidden, true); assert.equal(t.emptyText, ''); assert.equal(t.wayback, false);
-          assert.deepEqual(t.buttons.map((b) => b.act), ['addnode', 'help']);
+          assert.deepEqual(t.buttons.map((b) => b.act), ['addnode', 'fullscreen', 'help']);
           assert.equal(t.buttons[0].text.includes('⇧'), false, 'Shift+N is omitted until nodes exist');
         }
         await reset(page);
         const t = await toolbar(page); assertBookends(t);
-        assert.deepEqual(t.buttons.map((b) => b.act), ['addnode', 'panel', 'help']);
+        assert.deepEqual(t.buttons.map((b) => b.act), ['addnode', 'panel', 'fullscreen', 'help']);
         const icon = await flow(page, (f) => { const r = f.shadowRoot.querySelector('.puck [data-act="addnode"] rect'); return ['x', 'y', 'width', 'height'].map((k) => Number(r.getAttribute(k))); });
         assert.deepEqual(icon, [1, 4.5, 14, 7]);
         await page.locator('.puck [data-act="help"]').click(); await settled(page);
         assert.ok(await page.locator('.help tr').count() >= 30, 'full desktop legend');
         assert.match(await page.locator('.help').textContent(), /N \/ ⇧N/);
+      });
+
+      await check(`${name}: node web links open without selecting or editing`, async () => {
+        await reset(page, { ...seed, nodes: [{ ...seed.nodes[0], text: `Original source: ${url}/source?message=177.` }, seed.nodes[1]] }, ['b']);
+        const before = await flow(page, (f) => f.getState());
+        const link = page.locator('.node[data-id="a"] a.node-link');
+        assert.equal(await link.getAttribute('href'), `${url}/source?message=177`);
+        assert.equal(await link.getAttribute('rel'), 'noopener noreferrer');
+        const opened = page.waitForEvent('popup');
+        await link.click();
+        const target = await opened; await target.waitForURL(`${url}/source?message=177`); await target.close();
+        assert.deepEqual(await flow(page, (f) => ({ doc: f.doc, history: f.getState().history, sel: f.selection })), { doc: before.doc, history: before.history, sel: before.view.sel });
+        assert.equal(await page.locator('textarea.ed').count(), 0);
+      });
+
+      await check(`${name}: remove from group lifts one level and keeps an undoable connection`, async () => {
+        const nested = { ...seed, groups: [{ id: 'outer', text: 'Outer' }, { id: 'g', text: 'Inner', parent: 'outer' }] };
+        await reset(page, nested, ['a']);
+        const before = await flow(page, (f) => f.doc);
+        await page.locator('[data-act="remove-from-group"]').click(); await settled(page);
+        assert.equal(await flow(page, (f) => f.doc.nodes[0].group), 'outer');
+        await page.keyboard.press('Shift+G'); await settled(page);
+        assert.equal(await flow(page, (f) => f.doc.nodes[0].group), null);
+        assert.equal(await page.locator('[data-act="remove-from-group"]').count(), 0);
+        assert.deepEqual(await flow(page, (f) => f.doc.edges), before.edges);
+        await flow(page, (f) => { f.undo(); f.undo(); }); await settled(page);
+        assert.deepEqual(await flow(page, (f) => f.doc), before);
+        await flow(page, (f) => f.redo()); await settled(page);
+        assert.equal(await flow(page, (f) => f.doc.nodes[0].group), 'outer');
+      });
+
+      await check(`${name}: fullscreen exits without changing document, selection or history`, async () => {
+        await reset(page, seed, ['a']);
+        await flow(page, (f) => { f.style.width = '640px'; f.style.height = '420px'; }); await settled(page);
+        const before = await flow(page, (f) => f.getState());
+        await page.locator('[data-act="fullscreen"]').click();
+        await page.waitForFunction(() => { const f = document.querySelector('lode-flow'); return f.matches(':fullscreen') || f.matches(':popover-open'); });
+        await settled(page);
+        const full = await page.locator('lode-flow').boundingBox();
+        assert.ok(full.width >= 1000 && full.height >= 700, 'the diagram escapes its embedded dimensions');
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => { const f = document.querySelector('lode-flow'); return !f.matches(':fullscreen') && !f.matches(':popover-open'); });
+        await settled(page);
+        const after = await flow(page, (f) => f.getState());
+        assert.deepEqual(after.doc, before.doc); assert.deepEqual(after.view.sel, before.view.sel); assert.deepEqual(after.history, before.history);
+        const embedded = await page.locator('lode-flow').boundingBox();
+        assert.equal(embedded.width, 640); assert.equal(embedded.height, 420);
+        await flow(page, (f) => { f.style.removeProperty('width'); f.style.removeProperty('height'); }); await settled(page);
       });
 
       await check(`${name}: edge-positioned drafts remain reachable without panning`, async () => {
@@ -369,8 +417,8 @@ try {
         await reset(page, { nodes: [{ id: 'only', text: 'Keep me' }], edges: [] }, ['only']);
         await page.keyboard.press('Delete'); await settled(page);
         let t = await toolbar(page); assertBookends(t); assertCentered(t);
-        assert.deepEqual(t.buttons.map((b) => b.act), ['addnode', 'undo', 'help']);
-        assert.equal(t.buttons[1].disabled, false); assert.equal(t.wayback, false);
+        assert.deepEqual(t.buttons.map((b) => b.act), ['addnode', 'fullscreen', 'undo', 'help']);
+        assert.equal(t.buttons.find((b) => b.act === 'undo').disabled, false); assert.equal(t.wayback, false);
         await page.locator('.puck [data-act="undo"]').click(); await settled(page);
         assert.equal(await flow(page, (f) => f.doc.nodes[0].text), 'Keep me');
         await page.keyboard.press('Delete'); await settled(page);
@@ -379,7 +427,7 @@ try {
         assert.equal(await page.locator('.puck [data-act="undo"]').count(), 0, 'fresh baseline has no disabled Undo');
         await flow(page, (f) => f.setAttribute('readonly', '')); await settled(page);
         t = await toolbar(page); assert.equal(t.emptyHidden, true); assert.equal(t.emptyText, '');
-        assert.deepEqual(t.buttons.map((b) => b.act), ['help']);
+        assert.deepEqual(t.buttons.map((b) => b.act), ['fullscreen', 'help']);
         await flow(page, (f) => f.removeAttribute('readonly'));
       });
 

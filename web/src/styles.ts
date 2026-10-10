@@ -39,6 +39,13 @@ export const CSS = /* css */ `
   contain: strict;
 }
 :host([theme="dark"]) { color-scheme: dark; }
+:host(:fullscreen), :host([data-lf-fullscreen]:popover-open) {
+  position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100dvh !important;
+  min-width: 0 !important; min-height: 0 !important; max-width: none !important; max-height: none !important;
+  margin: 0 !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important;
+  background: var(--lf-bg); overflow: hidden;
+}
+:host([data-lf-fullscreen])::backdrop { background: var(--lf-bg); }
 @media (prefers-color-scheme: dark) {
   :host(:not([theme="light"]):not([theme="blueprint"])) {
     --lf-bg: #16171a; --lf-fg: #ebe8e2; --lf-muted: #a19b90;
@@ -164,6 +171,8 @@ svg.layer { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overfl
 .carrier.editing { cursor: text; min-width: 96px; border-radius: 10px; box-shadow: 0 0 0 var(--lf-selection-width) var(--lf-accent), 0 0 0 6px var(--lf-accent-soft); }
 .carrier textarea.ed { text-align: center; }
 .t { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 1.38em; }
+.node-link { color: var(--lf-accent); text-decoration: underline; text-underline-offset: .12em; touch-action: manipulation; }
+.node-link:focus-visible { outline: 2px solid var(--lf-focus); outline-offset: 2px; border-radius: 2px; }
 .t:empty::before { content: attr(data-ph); color: var(--lf-muted); font-style: italic; }
 textarea.ed {
   display: block; width: 100%; margin: 0; padding: 0; border: 0; outline: none; resize: none; overflow: hidden;

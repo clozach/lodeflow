@@ -7,6 +7,8 @@ import { ICON } from './icons';
 import { engine, type EngineInput, type EngineOrientation, type GroupShape, type LayoutEngine, type LayoutResult } from './engine';
 import { CAMERA_KINDS, History, type Camera, type Entry, type EntryKind, type Snapshot, type ViewState } from './history';
 import { countItems, itemLimitProblem, parseMaxItems } from './item-limit';
+import { renderNodeText } from './node-links';
+import { fullscreenControl } from './fullscreen';
 import * as M from './model';
 import type { Compactness, FlowDoc, Orientation } from './model';
 import { plan, type Plan } from './plan';
@@ -393,6 +395,10 @@ export class LodeFlowElement extends Base {
   private nodeMagKey = '';
   private magSizes: { w: number; h: number; cost: number }[] | null = null;
   private puckKey = '';
+  private fullscreen = fullscreenControl(this, () => {
+    this.puckKey = '';
+    this.schedule();
+  }, (message) => this.announce(message));
 
   // ----- gestures -----
   private pointers = new Map<number, Pt>();
@@ -690,6 +696,7 @@ export class LodeFlowElement extends Base {
   connectedCallback() {
     if (!this.root) return;
     this.connected = true;
+    this.fullscreen.connect();
     try {
       this.eng = engine();
     } catch (err) {
@@ -731,6 +738,7 @@ export class LodeFlowElement extends Base {
 
   disconnectedCallback() {
     this.connected = false;
+    this.fullscreen.disconnect();
     if (this.persistTimer) this.saveNow();
     if (typeof window !== 'undefined') {
       window.removeEventListener('pagehide', this.onHide);
@@ -1508,7 +1516,7 @@ export class LodeFlowElement extends Base {
       }
       if (this.editing?.id !== n.id) {
         const t = el.firstElementChild as HTMLDivElement;
-        if (t.textContent !== n.text) t.textContent = n.text;
+        renderNodeText(t, n.text, !action);
       }
       el.classList.toggle('sel', sel.has(n.id));
       el.setAttribute('aria-label', n.text || 'Empty node');
@@ -2281,7 +2289,7 @@ export class LodeFlowElement extends Base {
     let left = Math.max(vp.left, visual?.offsetLeft ?? 0), top = Math.max(vp.top, visual?.offsetTop ?? 0);
     let right = Math.min(vp.right, (visual?.offsetLeft ?? 0) + (visual?.width ?? window.innerWidth));
     let bottom = Math.min(vp.bottom, (visual?.offsetTop ?? 0) + (visual?.height ?? window.innerHeight));
-    for (let parent: HTMLElement | null = this.parentElement; parent;) {
+    for (let parent: HTMLElement | null = this.fullscreen.active() ? null : this.parentElement; parent;) {
       const style = getComputedStyle(parent), r = parent.getBoundingClientRect();
       if (/(auto|scroll|hidden|clip)/.test(style.overflowX)) { left = Math.max(left, r.left + parent.clientLeft); right = Math.min(right, r.left + parent.clientLeft + parent.clientWidth); }
       if (/(auto|scroll|hidden|clip)/.test(style.overflowY)) { top = Math.max(top, r.top + parent.clientTop); bottom = Math.min(bottom, r.top + parent.clientTop + parent.clientHeight); }
@@ -2569,6 +2577,7 @@ export class LodeFlowElement extends Base {
     const groups = sel.filter((id) => M.groupById(doc, id));
     const edges = sel.filter((id) => M.edgeById(doc, id));
     const ro = this.readonly_;
+    const groupedNodes = nodes.filter((id) => M.nodeById(doc, id)?.group);
     // S / ⇧S step through a node's edges: offered on a lone node that has some, and on a lone edge.
     const one = sel.length === 1;
     const steps = one && (edges.length === 1 || (nodes.length === 1 && doc.edges.some((e) => e.from === nodes[0] || e.to === nodes[0])));
@@ -2578,7 +2587,7 @@ export class LodeFlowElement extends Base {
     const same = (a: string[]) => sameList(a, sel);
     const levels = !(one && (nodes.length || edges.length)) && (!same(M.dive(doc, sel)) || !same(M.surface(doc, sel)));
     const levelBtns = () => (levels ? this.flipBtn('dive', 'surface', ICON.dive, ICON.surface, 'Dive', 'J', 'Select what is inside, opening a collapsed group', 'select the group around it', 'K') : '');
-    const key = [sel.join(','), ro, steps, levels, groups.map((g) => M.groupById(doc, g)?.collapsed).join(','), edges.map((e) => M.connectionOf(doc, e)?.trunk.label ?? '').join(',')].join('|');
+    const key = [sel.join(','), ro, groupedNodes.join(','), steps, levels, groups.map((g) => M.groupById(doc, g)?.collapsed).join(','), edges.map((e) => M.connectionOf(doc, e)?.trunk.label ?? '').join(',')].join('|');
     if (key === this.nodeMagKey) return;
     this.nodeMagKey = key;
     let html = '';
@@ -2615,6 +2624,7 @@ export class LodeFlowElement extends Base {
         html += levelBtns();
         if (nodes.length || groups.length) html += this.btn('group', ICON.group, 'Group', 'G');
       }
+      if (groupedNodes.length) html += this.btn('remove-from-group', ICON.surface, 'Remove from group', '⇧G');
       html += this.btn('delete', ICON.trash, del, '⌫', 'danger');
     } else {
       html += `<span class="count-chip">${sel.length === 1 ? '1 selected' : `${sel.length} selected`}</span>`;
@@ -2661,7 +2671,7 @@ export class LodeFlowElement extends Base {
     // Add stays available in the diagram toolbar and follows N's selection context.
     const add = !this.readonly_;
     const layout = this._doc.nodes.length > 0;
-    const key = [u?.label, r?.label, !!this.panel, this.helpOpen, this.saveProblem, add, layout].join('|');
+    const key = [u?.label, r?.label, !!this.panel, this.helpOpen, this.saveProblem, add, layout, this.fullscreen.active()].join('|');
     if (key === this.puckKey) return;
     this.puckKey = key;
     const undoTitle = u ? `Undo ${esc(u.label)}${this.touchContext ? '' : ` (${K.undo})`}` : '';
@@ -2681,7 +2691,8 @@ export class LodeFlowElement extends Base {
 
   private fillPuck(addBtn: string, undo: string, redo: string, saveNote: string, layout: boolean) {
     const layoutBtn = layout ? `<button class="mb ${this.panel ? 'on' : ''}" data-act="panel" aria-expanded="${!!this.panel}" title="Layout and view" aria-label="Layout and view">${ICON.magnet}<span>Layout</span>${kbd('/')}</button>` : '';
-    this.puck.innerHTML = `<div class="bar"><div class="puck-actions">${addBtn}${layoutBtn}${undo}${redo}${saveNote}</div><button class="mb help-toggle ${this.helpOpen ? 'on' : ''}" data-act="help" title="Help" aria-label="Help" aria-expanded="${this.helpOpen}"><span aria-hidden="true">?</span></button></div>`;
+    const fullscreenBtn = this.btn('fullscreen', this.fullscreen.active() ? ICON.exitFullscreen : ICON.fit, this.fullscreen.active() ? 'Exit fullscreen' : 'Fullscreen', '⇧F');
+    this.puck.innerHTML = `<div class="bar"><div class="puck-actions">${addBtn}${layoutBtn}${fullscreenBtn}${undo}${redo}${saveNote}</div><button class="mb help-toggle ${this.helpOpen ? 'on' : ''}" data-act="help" title="Help" aria-label="Help" aria-expanded="${this.helpOpen}"><span aria-hidden="true">?</span></button></div>`;
     this.puck.querySelectorAll<HTMLButtonElement>('button[data-act]').forEach((b) => this.keepEditorFocus(b));
     this.puck.querySelectorAll<HTMLButtonElement>('button[data-act]').forEach((b) =>
       b.addEventListener('click', (e) => {
@@ -2835,6 +2846,9 @@ export class LodeFlowElement extends Base {
       ${row('Link', 'Select a node or edge, tap Link, then choose a destination. Linking from an edge creates a fork; linking a node into an edge creates a merge')}
       ${row('List checkboxes', 'Check several rows, then tap Link or Add node to act on them together')}
       ${row('Groups', 'Tap a group’s chevron to fold or unfold it. Its selection controls also offer Dive, Expand or Collapse')}
+      ${row('Remove from group', 'Move selected nodes out one group level, keeping their links')}
+      ${row('Web links', 'Tap an underlined URL in a node to open it in a new tab')}
+      ${row('Fullscreen', 'Fill the screen with this diagram. Exit fullscreen returns it to the page')}
       ${row('Delete', 'Delete the selection. The diagram toolbar’s Undo brings it back')}
       ${row('Layout', 'Change flow direction, spacing and grouping, or fit the diagram into view')}
       ${row('Undo / redo', 'Take back or repeat content and view changes from the diagram toolbar')}
@@ -2861,7 +2875,7 @@ export class LodeFlowElement extends Base {
       ${row('N / ⇧N', 'Add a node after / before the selected node. Nothing selected: N adds a node; ⇧N lists nodes for a new node to link before (↵) or after (⇧↵). An edge selected: N inserts a node in its middle. A plain edge or merge: ⇧N adds a new cause')}
       ${row('E / ⇧E (L / H)', 'Link from / into the selection, nearest first. Picking an edge creates a merge / fork. With an edge selected, choose nodes to branch to / join from')}
       ${row('S / ⇧S', 'Select the selected node’s next edge / the edge before')}
-      ${row('G / ⇧G', 'Group the selection / ungroup')}
+      ${row('G / ⇧G', 'Group the selection / remove grouped nodes one level, or ungroup selected groups')}
       ${row('C', 'Collapse or expand the selected group')}
       ${row('Fork an edge', 'Select an edge, then Add effect for a new destination, or E / Link to choose existing nodes. Dragging an edge onto a node also branches to it. All branches share the trunk’s label')}
       ${row('⌫', 'Delete the selection (a shared trunk deletes the whole merge or fork)')}
@@ -2875,6 +2889,8 @@ export class LodeFlowElement extends Base {
       ${row('O · B · D · I · T · U', 'Orientation · bias · density · incremental layout · tight groups · untangle')}
       ${row('/', 'Open the layout controls')}
       ${row('F', 'Bring the selection into view')}
+      ${row('⇧F', 'Fullscreen / exit fullscreen (Esc also exits)')}
+      ${row('Web links', 'Click an underlined URL, or Tab to it and press Enter, to open it in a new tab')}
       </table>`;
     this.helpEl.insertAdjacentHTML('beforeend', '<slot name="help" class="help-extra"></slot>');
     const slot = this.helpEl.querySelector<HTMLSlotElement>('slot')!;
@@ -2960,6 +2976,8 @@ export class LodeFlowElement extends Base {
         return this.groupSelection();
       case 'ungroup':
         return this.ungroupSelection();
+      case 'remove-from-group':
+        return this.removeSelectedNodesFromGroup();
       case 'collapse':
         return this.toggleCollapse();
       case 'delete':
@@ -2968,6 +2986,9 @@ export class LodeFlowElement extends Base {
         return this.locateSelection();
       case 'fit':
         return this.fit();
+      case 'fullscreen':
+        void this.fullscreen.toggle();
+        return;
       case 'zoom100':
         return this.zoomTo(1);
       case 'upright':
@@ -3126,6 +3147,14 @@ export class LodeFlowElement extends Base {
       doc = M.ungroup(doc, g);
     }
     this.commit(gs.length === 1 ? 'Ungroup' : `Ungroup ${gs.length} groups`, 'ungroup', { doc, view: { sel: members } });
+  }
+
+  private removeSelectedNodesFromGroup() {
+    if (this.readonly_) return;
+    const doc = M.removeNodesFromGroup(this._doc, this.view.sel);
+    if (doc === this._doc) return;
+    this.commit('Remove from group', 'ungroup', { doc });
+    this.announce('Selected nodes moved out one group level. Their links are unchanged.');
   }
 
   private toggleCollapse() {
@@ -3505,6 +3534,8 @@ export class LodeFlowElement extends Base {
 
   private onPointerDown(e: PointerEvent) {
     if (this.graphPresentation) return;
+    // Web links keep native pointer/focus behavior instead of becoming a selection or drag.
+    if ((e.target as Element).closest?.('a.node-link')) return;
     this.wheelRotation = null;
     const p = this.local(e);
     this.lastPointer = p;
@@ -3778,6 +3809,7 @@ export class LodeFlowElement extends Base {
 
   private onContextMenu(e: MouseEvent) {
     if (this.graphPresentation) return;
+    if ((e.target as Element).closest?.('a.node-link')) return;
     e.preventDefault();
     const p = this.local(e);
     const target = this.withEdge(e.target, this.hit(e.target), p);
@@ -4532,6 +4564,8 @@ export class LodeFlowElement extends Base {
   // =====================================================================
 
   private onKeyDown(e: KeyboardEvent) {
+    // Tab and Enter on a URL belong to the native link, not the canvas editor.
+    if ((e.target as Element).closest?.('a.node-link')) return;
     // Slotted Help controls belong to the host, including their native keyboard behavior.
     if (e.target instanceof Element && this.contains(e.target)) {
       if (e.key === 'Escape' && this.helpOpen) { e.preventDefault(); this.closeHelp(); }
@@ -4688,7 +4722,8 @@ export class LodeFlowElement extends Base {
       case 'g':
       case 'G':
         done();
-        return e.shiftKey ? this.ungroupSelection() : this.groupSelection();
+        if (!e.shiftKey) return this.groupSelection();
+        return this.view.sel.some((id) => M.nodeById(this._doc, id)?.group) ? this.removeSelectedNodesFromGroup() : this.ungroupSelection();
       case 'c':
       case 'C':
         done();
@@ -4754,6 +4789,7 @@ export class LodeFlowElement extends Base {
       case 'f':
       case 'F':
         done();
+        if (e.shiftKey) { void this.fullscreen.toggle(); return; }
         return this.locateSelection();
     }
   }

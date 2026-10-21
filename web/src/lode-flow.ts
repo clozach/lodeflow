@@ -1366,7 +1366,7 @@ export class LodeFlowElement extends Base {
     return { x: samples[m * 2], y: samples[m * 2 + 1] };
   }
 
-  /** World box around an edge: its label when it has one, else a small box at the middle of its route. */
+  /** Label bounds for connected edges; loose arrows include their whole painted route. */
   private edgeBox(id: string, target = false): Rect | null {
     const a = this.edgeAnchor(id, target);
     if (!a) return null;
@@ -1374,7 +1374,18 @@ export class LodeFlowElement extends Base {
     const sz = key ? this.sizes.get(key) : null;
     const w = Math.max(sz?.w ?? 0, 24);
     const hh = Math.max(sz?.h ?? 0, 24);
-    return { x: a.x - w / 2, y: a.y - hh / 2, w, h: hh };
+    let x0 = a.x - w / 2, y0 = a.y - hh / 2, x1 = a.x + w / 2, y1 = a.y + hh / 2;
+    const loose = M.looseById(this._doc, id);
+    const route = target ? this.geo?.edges.get(id) : this.shown.edges.get(id);
+    if (loose && route) {
+      // Keep magnets clear of either arrow direction, including the arrowhead's wings.
+      const points = 'samples' in route ? route.samples : route.s;
+      for (let i = 0; i < points.length; i += 2) {
+        x0 = Math.min(x0, points[i] - 5); x1 = Math.max(x1, points[i] + 5);
+        y0 = Math.min(y0, points[i + 1] - 5); y1 = Math.max(y1, points[i + 1] + 5);
+      }
+    }
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
   }
 
   private emit(type: string, detail: unknown) {

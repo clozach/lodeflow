@@ -247,6 +247,34 @@ try {
         assert.deepEqual(await doc(p), original);
       });
 
+      await check(`${name}: selected free arrowheads stay clear of their controls in either direction`, async () => {
+        for (const orientation of ['tb', 'lr']) for (const reversed of [false, true]) {
+          await reset(p, { ...seed, nodes: [], edges: [], loose: [{ id: 'loose', label: 'relates to', ...(reversed ? { reversed: true } : {}) }], settings: { orientation } }, ['loose']);
+          const overlap = await flow(p, (f) => {
+            const path = f.edgeEls.get('loose').path, m = path.getScreenCTM();
+            const boxes = ['.node-magnet', '.puck'].map((s) => f.shadowRoot.querySelector(s).getBoundingClientRect());
+            return [0, 0.12, 0.88, 1].map((t) => { const q = path.getPointAtLength(path.getTotalLength() * t), x = m.a * q.x + m.c * q.y + m.e, y = m.b * q.x + m.d * q.y + m.f; return boxes.some((r) => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom); });
+          });
+          assert.deepEqual(overlap, [false, false, false, false], `${orientation}, reversed=${reversed}`);
+        }
+      });
+
+      await check(`${name}: ordinary and hanging arrowheads stay clear of edge controls`, async () => {
+        const failures = [];
+        for (const orientation of ['tb', 'lr']) for (const type of ['ordinary', 'head-free', 'tail-free']) for (const reverse of [false, true]) {
+          const fixture = type === 'ordinary' ? { ...seed, settings: { orientation } } : { ...seed, edges: [], loose: [{ id: 'ab', label: 'relates to', [type === 'head-free' ? 'from' : 'to']: 'a' }], settings: { orientation } };
+          await reset(p, fixture, ['ab']);
+          if (reverse) { await p.keyboard.press('Shift+r'); await settle(p); }
+          const blocked = await flow(p, (f) => {
+            const path = f.edgeEls.get('ab').path, m = path.getScreenCTM(), q = path.getPointAtLength(path.getTotalLength());
+            const x = m.a * q.x + m.c * q.y + m.e, y = m.b * q.x + m.d * q.y + m.f;
+            return ['.node-magnet', '.puck'].some((s) => { const r = f.shadowRoot.querySelector(s).getBoundingClientRect(); return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; });
+          });
+          if (blocked) failures.push(`${orientation}, ${type}, reversed=${reverse}`);
+        }
+        assert.deepEqual(failures, [], 'arrowheads covered by a control');
+      });
+
       await check(`${name}: Shift keeps edge controls and their neighboring controls in place`, async () => {
         await reset(p, seed, ['ab']);
         const geometry = () => flow(p, (f) => [...f.shadowRoot.querySelectorAll('.node-magnet button')].map((b) => ({ act: b.dataset.act, x: b.getBoundingClientRect().x, y: b.getBoundingClientRect().y, w: b.getBoundingClientRect().width, h: b.getBoundingClientRect().height })));

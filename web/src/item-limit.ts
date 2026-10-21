@@ -8,7 +8,7 @@ export interface ItemLimitDetail {
   message: string;
 }
 
-export const countItems = (doc: FlowDoc): number => doc.nodes.length + doc.edges.length + doc.groups.length + (doc.junctions?.length ?? 0);
+export const countItems = (doc: FlowDoc): number => doc.nodes.length + doc.edges.length + doc.groups.length + (doc.junctions?.length ?? 0) + (doc.loose?.length ?? 0);
 
 /** Missing or invalid values leave ordinary embeds uncapped; zero permits an empty diagram. */
 export function parseMaxItems(value: string | null): number | null {

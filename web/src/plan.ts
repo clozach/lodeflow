@@ -3,6 +3,9 @@
 // A plain edge's label goes in as a size on the edge: the engine hangs it on the edge's middle
 // bend point, lengthening a one-rank edge to two, and keeps it clear of everything else.
 // Junction dots and labels are both drawn as *carriers*.
+// A loose edge free at both ends goes in as a box vertex of its own (drawn as a straight arrow with
+// its label in the middle); one hanging from a node goes in as an ordinary part whose free end is
+// a zero-size stub vertex. Boxes and stubs are *extras*: engine vertices after the junctions.
 
 import * as M from './model';
 import type { FlowDoc } from './model';
@@ -16,6 +19,15 @@ export interface Carrier {
   /** Label text, or null for a bare junction dot. */
   text: string | null;
   /** Deepest group holding every end (junctions only: labels follow their edge). */
+  group: string | null;
+}
+
+/** An engine vertex for a loose edge: its box (both ends free) or the stub at its free end. */
+export interface Extra {
+  /** `b:<loose id>` or `s:<loose id>`. */
+  key: string;
+  kind: 'box' | 'stub';
+  loose: string;
   group: string | null;
 }
 
@@ -41,10 +53,14 @@ export interface Plan {
   arrow: Set<string>;
   /** Doc edge id → the carrier it runs through or into, if any. */
   carrierOf: Map<string, string>;
+  /** Box and stub vertices, engine vertices nodeCount + junctionCount + i. */
+  extras: Extra[];
 }
 
 export const junctionKey = (id: string) => `j:${id}`;
 export const labelKey = (id: string) => `l:${id}`;
+export const boxKey = (id: string) => `b:${id}`;
+export const stubKey = (id: string) => `s:${id}`;
 
 /**
  * @param draft An edge whose label is being written: it gets a carrier even while empty, with this text.
@@ -54,8 +70,8 @@ export function plan(doc: FlowDoc, draft: { edge: string; text: string } | null 
   doc.nodes.forEach((n, i) => index.set(n.id, i));
   const nodeCount = doc.nodes.length;
   const groupOf = (id: string) => M.nodeById(doc, id)?.group ?? null;
-  // Draft of a branch's label writes the connection's shared label.
-  if (draft) {
+  // Draft of a branch's label writes the connection's shared label; a loose edge's is its own.
+  if (draft && !M.looseById(doc, draft.edge)) {
     const c = M.connectionOf(doc, draft.edge);
     draft = c ? { edge: c.trunk.id, text: draft.text } : null;
   }
@@ -95,5 +111,29 @@ export function plan(doc: FlowDoc, draft: { edge: string; text: string } | null 
     partOf.set(e.id, parts.length);
     parts.push({ src: vertex(e.from), dst: vertex(e.to), backHint: !!e.back, label });
   }
-  return { index, nodeCount, carriers, junctionCount, parts, partOf, arrow, carrierOf };
+  const extras: Extra[] = [];
+  for (const l of M.looseOf(doc)) {
+    const key = labelKey(l.id);
+    // A free one always has a label element: it sizes the box and gives it something to grab.
+    const text = textFor(l.id, l.label);
+    const anchor = M.looseAnchor(l);
+    const group = anchor ? groupOf(anchor) : l.group ?? null;
+    const extra = { key: anchor ? stubKey(l.id) : boxKey(l.id), kind: anchor ? 'stub' as const : 'box' as const, loose: l.id, group };
+    index.set(extra.key, nodeCount + junctionCount + extras.length);
+    extras.push(extra);
+    arrow.add(l.id);
+    if (!anchor) {
+      carriers.push({ key, kind: 'label', edge: l.id, text: text ?? '', group });
+      carrierOf.set(l.id, key);
+      continue;
+    }
+    if (text !== null) {
+      carriers.push({ key, kind: 'label', edge: l.id, text, group: null });
+      carrierOf.set(l.id, key);
+    }
+    const stub = index.get(extra.key)!;
+    partOf.set(l.id, parts.length);
+    parts.push({ src: l.from ? vertex(l.from) : stub, dst: l.to ? vertex(l.to) : stub, backHint: false, label: text !== null ? key : null });
+  }
+  return { index, nodeCount, carriers, junctionCount, parts, partOf, arrow, carrierOf, extras };
 }

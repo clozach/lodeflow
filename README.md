@@ -82,6 +82,7 @@ Three options sit on top of the rules, the first two on by default:
 - **Edges are selectable**: click on or near one (within 12 px with a mouse, 22 px by touch; a line inside a group box wins over the box) (or `S` / `⇧S`, or *Select edge* on a node's or an edge's controls, ⇧-click for back, to step forward / back through the selected node's edges). `S` walks their drawn directions clockwise on screen from 12 o'clock; `⇧S` walks that order backwards. Click again or press `↵` to write its label; a branch edits its connection’s shared label. `⌫` deletes it; Undo in the diagram toolbar restores it. Deleting a shared trunk deletes the whole merge or fork; deleting one branch leaves the rest (a junction left with one branch dissolves into a plain edge, label kept).
 - **Insert a node into an edge**: select the edge and press `N` (or *Insert node* on its controls). The edge becomes two with a new node between them, ready for its text; the first half keeps the edge’s id and label, except a fork trunk keeps them on the half leading to its junction. Leaving the new node empty (`↵`, `Esc` or a click away) rejoins the edge. `⇧N` (or *Add cause*) adds a new node that joins the edge as another cause of its effect, a merge, ready for its text.
 - **Remove a label, keep the edge**: select a labelled edge and press `⇧⌫` (or *Remove label*). For a branch it removes the shared trunk’s label.
+- **Loose edges** are pieces waiting to be connected: an edge with one or both ends free. `A` (or *Add edge* on a node's controls) hangs one from the selected node, `⇧A` points one into it, and with no node selected `A` adds one free at both ends. A new one is labelled *relates to*, with the label ready to type over. A free one is drawn as a straight arrow along the flow: its label in the middle and one label-height of line at each end (three label-heights long, top to bottom). To attach one, drag it onto a node (the node takes its free end, the head when both are free), drag a node onto it (the node becomes its tail), or select it and press `E` / `⇧E` (*Attach*) to pick its effect / cause. With both ends attached it becomes an ordinary edge that keeps its id and label. From the keyboard, `S` / `⇧S` on a node step through its edges, loose ones included, and the arrow keys visit free ones as they visit nodes. `⇧⌫` removes a loose edge's label and keeps the edge. A folded group counts the free ones inside it.
 - Links you cannot make are refused where you try them, with the reason: a node to itself, a link that already exists, a node onto an edge it is already part of or points into, or a merge that would duplicate a direct link to the same effect.
 
 ## Use it
@@ -109,6 +110,14 @@ const [doc, setDoc] = useState(initialDoc);
 
 Import `lodeflow` in `onMount`, then set `el.doc`. Listen to `onlode-change` (Svelte 5) or `on:lode-change` (Svelte 4). See `examples/svelte/FlowDemo.svelte`.
 
+## Copy and paste
+
+`⌘C` / `⌘X` / `⌘V` (`Ctrl` elsewhere) copy, cut and paste the selection through the system clipboard, within one diagram or into another one, on the same page or another. Copying takes the selected nodes and groups (a group brings everything inside it), the edges between copied nodes, any group whose contents all come, and loose edges hanging from copied nodes. A selected edge whose ends stay behind arrives as a loose edge with its label. Pasting gives every item a new id, selects what arrived, lands it inside the selected group when one group is selected, and is one undo step. Plain text from another app pastes as one node per line (up to 50; more is refused with the count named).
+
+A read-only diagram copies; there `⌘X` copies and removes nothing, and `⌘V` is refused. Text boxes and fields keep the browser's own copy and paste. The selection's *Copy* button copies without the keyboard, and *Paste* appears in the diagram toolbar once a diagram on the page has copied something (for touch screens, which have no `⌘V`).
+
+The clipboard carries three types: `application/x-lodeflow+json` (the fragment), `text/html` (readable words, with the fragment in a `data-lodeflow` attribute, because WebKit drops custom types between origins) and `text/plain` (each node on its own line, then each connection). Each diagram listens on its document and acts only while it holds focus, so two diagrams on a page never both paste.
+
 ## Document format
 
 ```json
@@ -117,11 +126,12 @@ Import `lodeflow` in `onMount`, then set `el.doc`. Listen to `onlode-change` (Sv
   "edges":  [{ "from": "a", "to": "j1" }, { "from": "c", "to": "j1" }, { "from": "j1", "to": "b", "label": "together" }],
   "junctions": [{ "id": "j1" }],
   "groups": [{ "id": "g1", "text": "A group", "parent": null, "collapsed": false }],
+  "loose":  [{ "id": "l1", "from": "a", "label": "relates to" }, { "id": "l2", "label": "relates to", "group": "g1" }],
   "settings": { "orientation": "auto", "bias": "start", "compactness": "comfortable", "incremental": false, "tightGroups": true, "untangle": true }
 }
 ```
 
-Missing ids are generated. Edges that point at nothing, duplicates and self-loops are dropped. Each node holds one piece of text, drawn at a fixed width with auto height. An edge may carry a `label`. A junction with `kind: "merge"` (or no kind, for legacy documents) joins two or more incoming branches into one outgoing trunk. A junction with `kind: "fork"` splits one incoming trunk into two or more outgoing branches. The trunk holds the shared label. A junction left with fewer than two branches or no trunk is tidied away on load. Junction-to-junction chains and mixed many-to-many junctions are not supported. Labels such as “OR” are descriptive text, not executable logic. Older documents load unchanged.
+Missing ids are generated. Edges that point at nothing, duplicates and self-loops are dropped. An edge with an end left out (no `from` or no `to`) is kept as a loose edge in `loose`; one there with both ends on nodes becomes an ordinary edge. A loose edge names at most one node (`from` its tail, `to` its head); a free one may sit in a `group`. `loose` is absent when there are none. Each node holds one piece of text, drawn at a fixed width with auto height. An edge may carry a `label`. A junction with `kind: "merge"` (or no kind, for legacy documents) joins two or more incoming branches into one outgoing trunk. A junction with `kind: "fork"` splits one incoming trunk into two or more outgoing branches. The trunk holds the shared label. A junction left with fewer than two branches or no trunk is tidied away on load. Junction-to-junction chains and mixed many-to-many junctions are not supported. Labels such as “OR” are descriptive text, not executable logic. Older documents load unchanged.
 
 ## Element API
 
@@ -131,14 +141,14 @@ Missing ids are generated. Edges that point at nothing, duplicates and self-loop
 | `bias` · `compactness` · `incremental` · `tight-groups` · `untangle` | defaults for documents that do not set them (`tight-groups` and `untangle` default on; `="false"` turns one off) |
 | `node-width` | text width in px (default 176) |
 | `fit-min` | smallest zoom fitting may use before the view starts at the flow's beginning and scrolls instead: `0.6` or `60%` (default `0.7`; radial never above `0.35`). Set it for your readers: lower on a page read mostly on phones, higher on a kiosk read from across the room. A viewer's own change in *All values* wins while their `storage-key` state lasts |
-| `readonly` | no content changes; selecting, panning, zooming and their undo still work |
+| `readonly` | no content changes; selecting, copying, panning, zooming and their undo still work |
 | `presentation` | `editor` (default) · `graph`: transparent drawing with no frame ring, controls, editing, camera gestures or browser-storage writes; the host sets content and highlights |
 | `node-activation` | `edit` (default) · `event`: a node click, Enter or Space emits `lode-activate` for the host instead of editing; nodes become keyboard-focusable buttons with an outline |
 | `group-activation` | `event`: in graph presentation, group titles and collapsed group proxies become native buttons and emit `lode-group-activate`; the host decides whether to open or close them |
 | `empty-hint` | opt-in first-node prompt above the centered Add node / Help palette, while an editable diagram has no nodes; `="false"` turns it off. Desktop: “Double-click anywhere” / “to add the first node” / “or”. Touch: “Tap Add node” / “to add the first node”. It fades when the first node appears; Shift+N appears in the palette only once nodes exist |
 | `storage-key` | keep content **and undo history** in localStorage: the document under `lodeflow:<key>`, the history under `lodeflow:<key>:history` (trimmed to fit when the store is nearly full). If even the document cannot be saved, the *Layout* pill shows *Not saved* and `lode-save` fires |
 | `theme` | `light` · `dark` · `blueprint`; omitted follows the browser's light/dark preference. Blueprint is a built-in drafting grid with flat blue nodes, monospace text, yellow selection and cyan keyboard focus |
-| `max-items` | optional non-negative integer, e.g. `100`; combined nodes + edges + groups + junctions. Omitted (or invalid) is uncapped. Labels, selection and history steps do not add to the count |
+| `max-items` | optional non-negative integer, e.g. `100`; combined nodes + edges (loose ones too) + groups + junctions. Omitted (or invalid) is uncapped. Labels, selection and history steps do not add to the count |
 | `src` | URL of a JSON document |
 | `wheel` | `auto` (scroll pans once the diagram has focus; the page is never trapped) · `always` (full-page apps: also captures touch from the first finger) · `modifier` (only ⌘/Ctrl-scroll zooms) |
 | `auto-orientations` | directions `auto` may choose from (default `lr tb`) |
@@ -233,6 +243,8 @@ Press `?` inside a diagram for the full list. The short version:
 - **`=` / `−`** zoom in and out by a factor of 1.5; holding **⇧** doubles the increment from 0.5 to 1 (factor 2). `+` and `_` work too, as the shifted keys on a US keyboard. In and out are reciprocal, keep the view centre fixed, and a burst is one undo step.
 - **⌘/Ctrl-scroll or pinch** zooms at the pointer; **⌥-scroll, a two-finger twist, or `[` `]`** rotates the view, snapping within 3° of every 45° angle (0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°); `R` sets it upright; `0` fits and follows; `1` is 100%.
 - **Arrows** move the selection to the nearest node or group on screen; `N` / `⇧N` add a node after/before the selected node (with an edge selected, `N` inserts one into it and `⇧N` adds a cause that merges into it; with nothing selected, `N` adds a free node and `⇧N` opens a list of nodes for a new node to link before, `↵`, or after, `⇧↵`, the picked ones, several at once with the checks above); `⇧⌫` removes a selected edge's label; `E` (or `L`) links from the selected node or edge, `⇧E` (or `H`) links into it; `F` brings the selection into view; `S` / `⇧S` step forward / back through its edges; `G` / `⇧G` group/ungroup; `C` collapses; `⌫` deletes.
+- **`A` / `⇧A`** add a loose edge leaving / entering the selected node, or free at both ends with nothing selected (see *Loose edges* above).
+- **`⌘C` / `⌘X` / `⌘V`** copy, cut and paste, within a diagram or between diagrams (see *Copy and paste*).
 - **Remove from group `⇧G`** appears beside selected nodes inside a group. It moves each selected node out by one level: into its group's parent, or to the top level when there is no parent. The group, its other members and all connections stay intact; Undo puts the nodes back. With groups selected instead of grouped nodes, `⇧G` retains the existing Ungroup action.
 - **Fullscreen `⇧F`** in the diagram toolbar gives a cramped embed the whole screen. Click **Exit fullscreen**, press `⇧F` again, or press `Esc` to return to the page. Where native fullscreen is unavailable, a page-sized top layer provides the same escape from surrounding content. The diagram remains the same element, with its document and saved history intact; fullscreen itself adds no undo step.
 - **`/`, right-click or long-press** opens the layout controls where you are: orientation `O`, bias `B`, density `D`, incremental `I`, tight groups `T`, untangle `U`.

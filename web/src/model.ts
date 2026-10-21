@@ -29,6 +29,22 @@ export interface FlowEdge {
  */
 export type FlowJunction = { id: string; kind?: 'merge' } | { id: string; kind: 'fork' };
 
+/**
+ * A loose edge has at least one free end: an arrow piece waiting to be attached. At most one end
+ * names a node (`from` = its tail, `to` = its head); when both attach it becomes an ordinary
+ * FlowEdge. A fully free one may sit in a group; an attached one follows its node's group.
+ */
+export interface FlowLoose {
+  id: string;
+  from?: string;
+  to?: string;
+  label?: string;
+  group?: string | null;
+}
+
+/** The label a new loose edge starts with. */
+export const LOOSE_LABEL = 'relates to';
+
 export interface FlowGroup {
   id: string;
   text: string;
@@ -52,6 +68,8 @@ export interface FlowDoc {
   edges: FlowEdge[];
   groups: FlowGroup[];
   junctions: FlowJunction[];
+  /** Loose edges (absent when there are none, so older documents and their files stay as they were). */
+  loose?: FlowLoose[];
   settings: FlowSettings;
 }
 
@@ -78,7 +96,10 @@ export function uid(prefix: string): string {
 }
 
 function str(v: unknown, dflt = ''): string {
-  return typeof v === 'string' ? v : v == null ? dflt : String(v);
+  if (typeof v === 'string') return v;
+  if (v == null) return dflt;
+  // An object whose toString or valueOf is not a function throws on String(): it has no text.
+  try { return String(v); } catch { return dflt; }
 }
 
 /** Fills fields added since a document was saved (keeps ids as they are). */
@@ -134,7 +155,14 @@ export function normalizeDoc(raw: unknown, fallback: Partial<FlowSettings> = {})
   const jids = new Set(junctions.map((j) => j.id));
   const edges: FlowEdge[] = [];
   const pairs = new Set<string>();
+  const looseIn: any[] = Array.isArray(r.loose) ? [...r.loose] : [];
+  const absent = (v: unknown) => v == null || (typeof v === 'string' && !v.trim());
   for (const e of edgesIn) {
+    // An edge with an end left out (not one naming something missing) is a loose edge.
+    if (absent(e?.from ?? e?.source) || absent(e?.to ?? e?.target)) {
+      looseIn.push(e);
+      continue;
+    }
     const from = str(e?.from ?? e?.source);
     const to = str(e?.to ?? e?.target);
     const ok = (id: string) => nids.has(id) || jids.has(id);
@@ -155,7 +183,32 @@ export function normalizeDoc(raw: unknown, fallback: Partial<FlowSettings> = {})
   if (typeof s.incremental === 'boolean') settings.incremental = s.incremental;
   if (typeof s.tightGroups === 'boolean') settings.tightGroups = s.tightGroups;
   if (typeof s.untangle === 'boolean') settings.untangle = s.untangle;
-  return tidyJunctions({ nodes, edges, groups, junctions, settings });
+  const loose: FlowLoose[] = [];
+  for (const l of looseIn) {
+    const end = (v: unknown) => (typeof v === 'string' && nids.has(v) ? v : undefined);
+    let from = end(l?.from ?? l?.source);
+    let to = end(l?.to ?? l?.target);
+    const lbl = str(l?.label ?? l?.text);
+    // Both ends on nodes: an ordinary edge, unless that would be a self-link or a duplicate.
+    if (from && to && from !== to && !pairs.has(from + '\u0000' + to)) {
+      pairs.add(from + '\u0000' + to);
+      const edge: FlowEdge = { id: fresh(l?.id, 'e'), from, to };
+      if (lbl.trim()) edge.label = lbl;
+      edges.push(edge);
+      continue;
+    }
+    if (from && to) to = undefined;
+    const piece: FlowLoose = { id: fresh(l?.id, 'e') };
+    if (from) piece.from = from;
+    if (to) piece.to = to;
+    if (lbl.trim()) piece.label = lbl;
+    const g = l?.group == null ? null : str(l.group);
+    if (!from && !to && g && gids.has(g)) piece.group = g;
+    loose.push(piece);
+  }
+  const doc: FlowDoc = { nodes, edges, groups, junctions, settings };
+  if (loose.length) doc.loose = loose;
+  return tidyJunctions(doc);
 }
 
 /**
@@ -244,13 +297,14 @@ interface DocIndex {
   nodes: Map<string, FlowNode>;
   groups: Map<string, FlowGroup>;
   edges: Map<string, FlowEdge>;
+  loose: Map<string, FlowLoose>;
   junctions: Set<string>;
   forks: Set<string>;
   trunk: Map<string, FlowEdge>;
   branches: Map<string, FlowEdge[]>;
   conns: Connection[] | null;
   links: Set<string> | null;
-  counts: Map<string, { nodes: number; groups: number }> | null;
+  counts: Map<string, { nodes: number; groups: number; loose: number }> | null;
 }
 const indexes = new WeakMap<FlowDoc, DocIndex>();
 
@@ -271,6 +325,7 @@ function indexOf(doc: FlowDoc): DocIndex {
     nodes: new Map(doc.nodes.map((n) => [n.id, n])),
     groups: new Map(doc.groups.map((g) => [g.id, g])),
     edges: new Map(doc.edges.map((e) => [e.id, e])),
+    loose: new Map(looseOf(doc).map((l) => [l.id, l])),
     junctions,
     forks,
     trunk,
@@ -293,6 +348,31 @@ export function groupById(doc: FlowDoc, id: string) {
 
 export function edgeById(doc: FlowDoc, id: string) {
   return indexOf(doc).edges.get(id);
+}
+
+const NO_LOOSE: FlowLoose[] = [];
+/** A document's loose edges (an empty list when it has none). */
+export function looseOf(doc: FlowDoc): FlowLoose[] {
+  return doc.loose ?? NO_LOOSE;
+}
+
+export function looseById(doc: FlowDoc, id: string) {
+  return indexOf(doc).loose.get(id);
+}
+
+/** Both ends free: drawn as a standalone arrow along the flow. */
+export function isFree(l: FlowLoose): boolean {
+  return !l.from && !l.to;
+}
+
+/** The node a loose edge is attached to, if any. */
+export function looseAnchor(l: FlowLoose): string | null {
+  return l.from ?? l.to ?? null;
+}
+
+function withLoose(doc: FlowDoc, loose: FlowLoose[]): FlowDoc {
+  const { loose: _old, ...rest } = doc;
+  return loose.length ? { ...rest, loose } : rest;
 }
 
 export function isJunction(doc: FlowDoc, id: string) {
@@ -358,23 +438,25 @@ export function linked(doc: FlowDoc, from: string, to: string): boolean {
 }
 
 /** How many nodes and groups sit inside a group, at any depth (one pass for all groups). */
-export function groupCounts(doc: FlowDoc, gid: string): { nodes: number; groups: number } {
+export function groupCounts(doc: FlowDoc, gid: string): { nodes: number; groups: number; loose: number } {
   const ix = indexOf(doc);
   if (!ix.counts) {
-    const counts = new Map<string, { nodes: number; groups: number }>();
-    const bump = (start: string | null | undefined, key: 'nodes' | 'groups') => {
+    const counts = new Map<string, { nodes: number; groups: number; loose: number }>();
+    const bump = (start: string | null | undefined, key: 'nodes' | 'groups' | 'loose') => {
       let cur = start ?? null;
       for (let guard = 0; cur && guard < 1000; guard++) {
-        const c = counts.get(cur) ?? counts.set(cur, { nodes: 0, groups: 0 }).get(cur)!;
+        const c = counts.get(cur) ?? counts.set(cur, { nodes: 0, groups: 0, loose: 0 }).get(cur)!;
         c[key]++;
         cur = ix.groups.get(cur)?.parent ?? null;
       }
     };
     for (const n of doc.nodes) bump(n.group, 'nodes');
     for (const g of doc.groups) bump(g.parent, 'groups');
+    // Free loose edges stand alone inside a group; a hanging one belongs with its node.
+    for (const l of looseOf(doc)) if (isFree(l)) bump(l.group, 'loose');
     ix.counts = counts;
   }
-  return ix.counts.get(gid) ?? { nodes: 0, groups: 0 };
+  return ix.counts.get(gid) ?? { nodes: 0, groups: 0, loose: 0 };
 }
 
 /** The deepest group holding every one of these (null = top level). */
@@ -428,6 +510,8 @@ export function parentOf(doc: FlowDoc, id: string): string | null {
   if (n) return n.group ?? null;
   const g = groupById(doc, id);
   if (g) return g.parent ?? null;
+  const l = looseById(doc, id);
+  if (l) return isFree(l) ? l.group ?? null : nodeById(doc, looseAnchor(l)!)?.group ?? null;
   const c = connectionOf(doc, id);
   return c ? commonGroup(doc, [...c.inputs, ...c.outputs].map((x) => nodeById(doc, x)?.group ?? null)) : null;
 }
@@ -445,7 +529,11 @@ export function depthOf(doc: FlowDoc, id: string): number {
 
 /** A group's own members, one level down: its nodes, then its groups. Null = the top level. */
 export function childrenOf(doc: FlowDoc, gid: string | null): string[] {
-  return [...doc.nodes.filter((n) => (n.group ?? null) === gid).map((n) => n.id), ...doc.groups.filter((g) => (g.parent ?? null) === gid).map((g) => g.id)];
+  return [
+    ...doc.nodes.filter((n) => (n.group ?? null) === gid).map((n) => n.id),
+    ...doc.groups.filter((g) => (g.parent ?? null) === gid).map((g) => g.id),
+    ...looseOf(doc).filter((l) => isFree(l) && (l.group ?? null) === gid).map((l) => l.id),
+  ];
 }
 
 /**
@@ -541,8 +629,10 @@ export function deleteItems(doc: FlowDoc, ids: Iterable<string>): { doc: FlowDoc
   const killN = new Set<string>();
   const killG = new Set<string>();
   const killE = new Set<string>();
+  const killL = new Set<string>();
   for (const id of ids) {
-    if (nodeById(doc, id)) killN.add(id);
+    if (looseById(doc, id)) killL.add(id);
+    else if (nodeById(doc, id)) killN.add(id);
     else if (groupById(doc, id)) {
       killG.add(id);
       const c = groupContents(doc, id);
@@ -559,9 +649,12 @@ export function deleteItems(doc: FlowDoc, ids: Iterable<string>): { doc: FlowDoc
   const nodes = doc.nodes.filter((n) => !killN.has(n.id));
   const edges = doc.edges.filter((e) => !killE.has(e.id) && !killN.has(e.from) && !killN.has(e.to));
   const groups = doc.groups.filter((g) => !killG.has(g.id));
+  // Loose edges go with the node they hang from, and free ones with the group they sit in.
+  const all = looseOf(doc);
+  const loose = all.filter((l) => !killL.has(l.id) && !(l.from && killN.has(l.from)) && !(l.to && killN.has(l.to)) && !(l.group && killG.has(l.group)));
   // Count connections as the viewer sees them: a shared connection is one.
   const trunks = new Set([...killE].map((id) => connectionOf(doc, id)?.trunk.id));
-  return { doc: tidyJunctions({ ...doc, nodes, edges, groups }), nodes: killN.size, groups: killG.size, edges: trunks.size };
+  return { doc: tidyJunctions(withLoose({ ...doc, nodes, edges, groups }, loose)), nodes: killN.size, groups: killG.size, edges: trunks.size + killL.size };
 }
 
 export type LinkResult = { doc: FlowDoc; edge: string; trunk: string; merged: boolean } | { error: string };
@@ -650,7 +743,10 @@ export function linkEach(doc: FlowDoc, links: { from: string; fromType?: 'node' 
   let made = 0;
   const problems: string[] = [];
   for (const l of links) {
-    const r = l.fromType === 'edge' ? (l.to.type === 'node' ? linkFromEdge(d, l.from, l.to.id) : { error: 'Link an edge to a node' }) : l.to.type === 'node' ? linkNodes(d, l.from, l.to.id) : linkToEdge(d, l.from, l.to.id);
+    // Loose edges: a node linked onto one becomes its tail; one linked onto a node gives it its free end.
+    const r = looseById(d, l.from) ? (l.to.type === 'node' ? attachLoose(d, l.from, l.to.id, 'to') : { error: 'Attach an edge to a node' })
+      : l.to.type === 'edge' && looseById(d, l.to.id) ? attachLoose(d, l.to.id, l.from, 'from')
+        : l.fromType === 'edge' ? (l.to.type === 'node' ? linkFromEdge(d, l.from, l.to.id) : { error: 'Link an edge to a node' }) : l.to.type === 'node' ? linkNodes(d, l.from, l.to.id) : linkToEdge(d, l.from, l.to.id);
     if ('error' in r) problems.push(r.error);
     else {
       d = r.doc;
@@ -720,7 +816,9 @@ export function dissolveNode(doc: FlowDoc, id: string): FlowDoc {
     const joined: FlowEdge = c?.kind === 'fork' && c.trunk.id === b.id ? { ...b, from: a.from, ...(a.back || b.back ? { back: true } : {}) } : { ...a, to: b.to };
     const dup = a.from === b.to || doc.edges.some((e) => e.from === a.from && e.to === b.to);
     const edges = doc.edges.flatMap((e) => (e === a ? (dup ? [] : [joined]) : e === b ? [] : [e]));
-    return tidyJunctions({ ...doc, nodes: doc.nodes.filter((n) => n.id !== id), edges });
+    // Loose edges hang from the node that goes, so they go too (as deleteItems does).
+    const loose = looseOf(doc).filter((l) => l.from !== id && l.to !== id);
+    return tidyJunctions(withLoose({ ...doc, nodes: doc.nodes.filter((n) => n.id !== id), edges }, loose));
   }
   return deleteItems(doc, [id]).doc;
 }
@@ -744,8 +842,9 @@ export function setEdgeLabel(doc: FlowDoc, edgeId: string, text: string): FlowDo
 export function groupItems(doc: FlowDoc, ids: string[], text = ''): { doc: FlowDoc; id: string } | null {
   const nodes = ids.filter((id) => nodeById(doc, id));
   const groups = ids.filter((id) => groupById(doc, id));
-  if (!nodes.length && !groups.length) return null;
-  const parents = [...nodes.map((id) => nodeById(doc, id)!.group ?? null), ...groups.map((id) => groupById(doc, id)!.parent ?? null)];
+  const free = ids.filter((id) => { const l = looseById(doc, id); return !!l && isFree(l); });
+  if (!nodes.length && !groups.length && !free.length) return null;
+  const parents = [...nodes.map((id) => nodeById(doc, id)!.group ?? null), ...groups.map((id) => groupById(doc, id)!.parent ?? null), ...free.map((id) => looseById(doc, id)!.group ?? null)];
   let common = commonGroup(doc, parents);
   // A group cannot become its own ancestor.
   if (common && groups.some((g) => groupWithin(doc, common, g))) common = null;
@@ -753,25 +852,25 @@ export function groupItems(doc: FlowDoc, ids: string[], text = ''): { doc: FlowD
   const g: FlowGroup = { id, text, parent: common, collapsed: false };
   const nset = new Set(nodes);
   const gset = new Set(groups);
-  return {
-    doc: {
-      ...doc,
-      groups: [...doc.groups.map((x) => (gset.has(x.id) ? { ...x, parent: id } : x)), g],
-      nodes: doc.nodes.map((n) => (nset.has(n.id) ? { ...n, group: id } : n)),
-    },
-    id,
+  const lset = new Set(free);
+  const next: FlowDoc = {
+    ...doc,
+    groups: [...doc.groups.map((x) => (gset.has(x.id) ? { ...x, parent: id } : x)), g],
+    nodes: doc.nodes.map((n) => (nset.has(n.id) ? { ...n, group: id } : n)),
   };
+  return { doc: lset.size ? withLoose(next, looseOf(doc).map((l) => (lset.has(l.id) ? { ...l, group: id } : l))) : next, id };
 }
 
 export function ungroup(doc: FlowDoc, gid: string): FlowDoc {
   const g = groupById(doc, gid);
   if (!g) return doc;
   const up = g.parent ?? null;
-  return {
+  const next: FlowDoc = {
     ...doc,
     groups: doc.groups.filter((x) => x.id !== gid).map((x) => (x.parent === gid ? { ...x, parent: up } : x)),
     nodes: doc.nodes.map((n) => (n.group === gid ? { ...n, group: up } : n)),
   };
+  return doc.loose ? withLoose(next, looseOf(doc).map((l) => (l.group === gid ? { ...l, group: up } : l))) : next;
 }
 
 /** Lift selected nodes one level without dissolving their groups or changing their connections. */
@@ -785,9 +884,78 @@ export function removeNodesFromGroup(doc: FlowDoc, ids: Iterable<string>): FlowD
     changed = true;
     return { ...node, group: group.parent ?? null };
   });
-  return changed ? { ...doc, nodes } : doc;
+  const loose = looseOf(doc).map((l) => {
+    if (!selected.has(l.id) || !l.group) return l;
+    changed = true;
+    return { ...l, group: groupById(doc, l.group)?.parent ?? null };
+  });
+  return changed ? withLoose({ ...doc, nodes }, loose) : doc;
 }
 
 export function setCollapsed(doc: FlowDoc, gid: string, collapsed: boolean): FlowDoc {
   return { ...doc, groups: doc.groups.map((g) => (g.id === gid ? { ...g, collapsed } : g)) };
+}
+
+// ---------- loose edges ----------
+
+/** A new loose edge: free at both ends, or hanging from a node (`from`: its tail; `to`: its head). */
+export function addLoose(doc: FlowDoc, at: { from?: string; to?: string; group?: string | null } = {}, text = LOOSE_LABEL): { doc: FlowDoc; id: string } {
+  const id = uid('e');
+  const piece: FlowLoose = { id };
+  if (at.from && nodeById(doc, at.from)) piece.from = at.from;
+  else if (at.to && nodeById(doc, at.to)) piece.to = at.to;
+  if (text.trim()) piece.label = text;
+  if (isFree(piece) && at.group && groupById(doc, at.group)) piece.group = at.group;
+  return { doc: withLoose(doc, [...looseOf(doc), piece]), id };
+}
+
+/** Which end attaching a node fills: the asked-for end, else the free one (the head when both are free). */
+export function freeEnd(l: FlowLoose, want?: 'from' | 'to'): 'from' | 'to' | null {
+  if (want) return l[want] ? null : want;
+  if (!l.to) return 'to';
+  if (!l.from) return 'from';
+  return null;
+}
+
+/** Why `node` cannot take this loose edge's end, or null when it can. */
+export function attachProblem(doc: FlowDoc, id: string, node: string, want?: 'from' | 'to'): string | null {
+  const l = looseById(doc, id);
+  if (!l || !nodeById(doc, node)) return 'Attach an edge to a node';
+  const end = freeEnd(l, want);
+  if (!end) return want === 'from' ? 'This edge already has a cause' : want === 'to' ? 'This edge already has an effect' : 'Both ends are attached';
+  const other = end === 'from' ? l.to : l.from;
+  if (other === node) return 'A node cannot link to itself';
+  if (other && linked(doc, end === 'from' ? node : other, end === 'from' ? other : node)) return 'Already linked';
+  return null;
+}
+
+/**
+ * Attaches a node to a loose edge's free end (`want`, else the free one). With both ends attached
+ * it becomes an ordinary edge, keeping its id and label.
+ */
+export function attachLoose(doc: FlowDoc, id: string, node: string, want?: 'from' | 'to'): LinkResult {
+  const why = attachProblem(doc, id, node, want);
+  if (why) return { error: why };
+  const l = looseById(doc, id)!;
+  const end = freeEnd(l, want)!;
+  const next: FlowLoose = { ...l, [end]: node };
+  delete next.group;
+  const rest = looseOf(doc).filter((x) => x.id !== id);
+  if (next.from && next.to) {
+    const edge: FlowEdge = { id, from: next.from, to: next.to };
+    if (next.label) edge.label = next.label;
+    return { doc: withLoose({ ...doc, edges: [...doc.edges, edge] }, rest), edge: id, trunk: id, merged: false };
+  }
+  return { doc: withLoose(doc, looseOf(doc).map((x) => (x.id === id ? next : x))), edge: id, trunk: id, merged: false };
+}
+
+/** Sets a loose edge's label; empty text removes it. */
+export function setLooseLabel(doc: FlowDoc, id: string, text: string): FlowDoc {
+  if (!looseById(doc, id)) return doc;
+  const keep = text.trim() ? text : '';
+  return withLoose(doc, looseOf(doc).map((l) => {
+    if (l.id !== id) return l;
+    const { label: _old, ...rest } = l;
+    return keep ? { ...rest, label: keep } : rest;
+  }));
 }

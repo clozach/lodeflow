@@ -11,7 +11,8 @@ import { renderNodeText } from './node-links';
 import { fullscreenControl } from './fullscreen';
 import * as M from './model';
 import type { Compactness, FlowDoc, Orientation } from './model';
-import { plan, type Plan } from './plan';
+import { boxKey, labelKey, plan, type Plan } from './plan';
+import { copyFragment, decodeFragment, encodeFragment, fragmentText, MIME, pasteFragment, TEXT_LINES, textFragment, textLines, type Fragment } from './clipboard';
 import {
   camEqual,
   clamp,
@@ -43,9 +44,20 @@ const K = {
   rewind: IS_MAC ? '⌥⌘Z' : 'Ctrl+Alt+Z',
   fastForward: IS_MAC ? '⇧⌥⌘Z' : 'Ctrl+Alt+Shift+Z',
   all: IS_MAC ? '⌘A' : 'Ctrl+A',
+  copy: IS_MAC ? '⌘C' : 'Ctrl+C',
+  cut: IS_MAC ? '⌘X' : 'Ctrl+X',
+  paste: IS_MAC ? '⌘V' : 'Ctrl+V',
   addNext: IS_MAC ? '⌘↵' : 'Ctrl+Enter',
 };
 const SAMPLES = 24;
+/**
+ * What a diagram in this window copied last, for the toolbar's Paste button (touch has no ⌘V, and
+ * reading the system clipboard from a button needs a permission). ⌘V reads the clipboard itself.
+ */
+let lastCopied: Fragment | null = null;
+/** The diagram whose toolbar Copy is running the browser's copy command, if any. */
+let armedFlow: LodeFlowElement | null = null;
+const pasteTargets = new Set<{ copied(): void }>();
 /** How close (screen px) a pointer must come to a line to hover or pick it: mouse, then touch. */
 const EDGE_HIT = 12;
 const EDGE_HIT_TOUCH = 22;
@@ -696,6 +708,11 @@ export class LodeFlowElement extends Base {
   connectedCallback() {
     if (!this.root) return;
     this.connected = true;
+    pasteTargets.add(this.pasteTarget);
+    // ⌘C / ⌘X / ⌘V arrive as the browser's own clipboard events. WebKit aims them at the outermost
+    // shadow host and Chromium at the focused element, so each diagram listens on its document and
+    // acts only when it holds focus.
+    if (typeof document !== 'undefined') for (const type of CLIP_EVENTS) document.addEventListener(type, this.onClipboard);
     this.fullscreen.connect();
     try {
       this.eng = engine();
@@ -703,7 +720,7 @@ export class LodeFlowElement extends Base {
       this.error = `Layout engine failed to load: ${(err as Error).message}`;
     }
     this.readAttributes();
-    if (this._doc.nodes.length === 0 && this._doc.groups.length === 0) this.loadInitial();
+    if (!hasContent(this._doc)) this.loadInitial();
     this.ro = new ResizeObserver(() => { this.onResize(); this.schedule(); });
     this.ro.observe(this.vp);
     // A clipped parent can resize without changing a deliberately taller diagram's size.
@@ -738,6 +755,8 @@ export class LodeFlowElement extends Base {
 
   disconnectedCallback() {
     this.connected = false;
+    pasteTargets.delete(this.pasteTarget);
+    if (typeof document !== 'undefined') for (const type of CLIP_EVENTS) document.removeEventListener(type, this.onClipboard);
     this.fullscreen.disconnect();
     if (this.persistTimer) this.saveNow();
     if (typeof window !== 'undefined') {
@@ -1131,6 +1150,7 @@ export class LodeFlowElement extends Base {
       if (k === 'Tab' || k.startsWith('Arrow') || k === 'Enter') this.vp.classList.add('kbd');
       this.onKeyDown(e as KeyboardEvent);
     });
+
     this.root.addEventListener('pointerdown', (e) => {
       this.vp.classList.remove('kbd');
       this.lastPointerType = (e as PointerEvent).pointerType;
@@ -1201,7 +1221,7 @@ export class LodeFlowElement extends Base {
   // =====================================================================
 
   private exists(id: string) {
-    return !!(M.nodeById(this._doc, id) || M.groupById(this._doc, id) || M.edgeById(this._doc, id));
+    return !!(M.nodeById(this._doc, id) || M.groupById(this._doc, id) || M.edgeById(this._doc, id) || M.looseById(this._doc, id));
   }
 
   private snapshot(): Snapshot {
@@ -1333,8 +1353,8 @@ export class LodeFlowElement extends Base {
   private edgeAnchor(id: string, target = false): Pt | null {
     const doc = this._doc;
     const e = M.edgeById(doc, id);
-    if (!e) return null;
-    if (!M.isJunction(doc, e.to)) {
+    if (!e && !M.looseById(doc, id)) return null;
+    if (!e || !M.isJunction(doc, e.to)) {
       const key = this.carrierOfEdge(id);
       const c = key ? target ? this.geo?.carriers.get(key) : this.shown.carriers.get(key) : null;
       if (c && ('visible' in c ? c.visible : c.o > 0.5)) return { x: c.x, y: c.y };
@@ -1595,6 +1615,7 @@ export class LodeFlowElement extends Base {
       const parts = [];
       if (c.nodes) parts.push(`${c.nodes} node${c.nodes === 1 ? '' : 's'}`);
       if (c.groups) parts.push(`${c.groups} group${c.groups === 1 ? '' : 's'}`);
+      if (c.loose) parts.push(`${c.loose} loose edge${c.loose === 1 ? '' : 's'}`);
       count.textContent = parts.length ? parts.join(' · ') : 'Empty group';
       const on = sel.has(g.id);
       els.box.classList.toggle('sel', on);
@@ -1630,9 +1651,9 @@ export class LodeFlowElement extends Base {
       return d;
     };
     [...doc.groups].sort((a, b) => depth(a.id) - depth(b.id)).forEach((g) => this.gLayer.append(this.groupEls.get(g.id)!.box));
-    // Edges
+    // Edges (loose ones too: one id namespace, so converting one keeps its line)
     const keepE = new Set<string>();
-    for (const e of doc.edges) {
+    for (const e of [...doc.edges, ...M.looseOf(doc)]) {
       keepE.add(e.id);
       if (!this.edgeEls.has(e.id)) {
         const path = svg('path', 'edge');
@@ -1685,7 +1706,7 @@ export class LodeFlowElement extends Base {
     }
     this.applyEdgeClasses();
     // The list is rebuilt after the next layout (what it hides depends on the new one).
-    if (this.linker && (this.readonly_ || (this.linker.dir !== 'new' && !M.nodeById(doc, this.linker.source) && !M.edgeById(doc, this.linker.source)))) this.closeLinker(false);
+    if (this.linker && (this.readonly_ || (this.linker.dir !== 'new' && !M.nodeById(doc, this.linker.source) && !M.edgeById(doc, this.linker.source) && !M.looseById(doc, this.linker.source)))) this.closeLinker(false);
     // Empty state / errors.
     this.emptyEl.hidden = !this.error;
     if (this.error) this.emptyEl.textContent = this.error;
@@ -1718,6 +1739,17 @@ export class LodeFlowElement extends Base {
           x.classList.toggle('hot', st === 'hot');
           x.classList.toggle('hover', this.hoverEdge === e.id || this.hoverEdge === c.trunk.id);
         }
+      }
+    }
+    for (const l of M.looseOf(doc)) {
+      const st = sel.has(l.id) ? 'sel' : (l.from && sel.has(l.from)) || (l.to && sel.has(l.to)) ? 'hot' : '';
+      state.set(l.id, st);
+      const els = this.edgeEls.get(l.id);
+      if (!els) continue;
+      for (const x of [els.path, els.arrow]) {
+        x.classList.toggle('sel', st === 'sel');
+        x.classList.toggle('hot', st === 'hot');
+        x.classList.toggle('hover', this.hoverEdge === l.id);
       }
     }
     for (const el of this.carrierEls.values()) {
@@ -1810,6 +1842,14 @@ export class LodeFlowElement extends Base {
             prevY: prev && prev.visible ? prev.y : undefined,
           };
         }),
+        // Loose edges: a zero-size stub at a free end, or a box for an edge free at both ends.
+        ...pl.extras.map((x) => {
+          const group = x.group ? gIndex.get(x.group) ?? -1 : -1;
+          if (x.kind === 'stub') return { w: 0, h: 0, group };
+          const box = looseBox(this.sizes.get(labelKey(x.loose)));
+          const prev = prevOk ? this.geo!.carriers.get(labelKey(x.loose)) : undefined;
+          return { w: box.w, h: box.h, group, prevX: prev && prev.visible ? prev.x : undefined, prevY: prev && prev.visible ? prev.y : undefined };
+        }),
       ],
       edges: pl.parts.map((p) => ({ src: p.src, dst: p.dst, backHint: p.backHint, label: p.label ? this.sizes.get(p.label) ?? { w: 64, h: 24 } : null })),
       groups: doc.groups.map((g) => {
@@ -1854,9 +1894,17 @@ export class LodeFlowElement extends Base {
     }
     const vertexGroups = new Map(doc.nodes.map((n) => [n.id, n.group]));
     for (const c of pl.carriers.slice(0, pl.junctionCount)) vertexGroups.set(c.key.slice(2), c.group);
+    const extraOf = new Map(pl.extras.map((x) => [x.loose, x]));
     const edgeGroup = (eid: string) => {
+      const x = extraOf.get(eid);
+      if (x) return x.group;
       const e = M.edgeById(doc, eid);
       return e ? M.commonGroup(doc, [vertexGroups.get(e.from), vertexGroups.get(e.to)]) : null;
+    };
+    // A box sits where the engine placed its vertex (extras follow the junctions).
+    const boxAt = (looseId: string) => {
+      const i = pl.index.get(boxKey(looseId));
+      return i === undefined ? undefined : r.nodes[i];
     };
     for (const n of doc.nodes) {
       const gn = nodes.get(n.id)!;
@@ -1869,6 +1917,10 @@ export class LodeFlowElement extends Base {
       if (k < pl.junctionCount) {
         const o = r.nodes[pl.nodeCount + k];
         if (o) carriers.set(c.key, { x: o.x, y: o.y, w: sz.w, h: sz.h, visible: o.visible });
+      } else if (boxAt(c.edge)) {
+        // A free loose edge's label sits in the middle of its box.
+        const o = boxAt(c.edge)!;
+        carriers.set(c.key, { x: o.x, y: o.y, w: sz.w, h: sz.h, visible: o.visible });
       } else {
         // An edge label sits where the engine hung it on its edge's route.
         const o = r.edges[pl.partOf.get(c.edge) ?? -1];
@@ -1888,6 +1940,29 @@ export class LodeFlowElement extends Base {
       const pc = o.hidden && foldedCenter(edgeGroup(e.id));
       if (pc) for (let i = 0; i < samples.length; i += 2) { samples[i] = pc.x; samples[i + 1] = pc.y; }
       edges.set(e.id, { path: o.path, samples, back: o.back, hidden: o.hidden, from: e.from, to: e.to, arrow: pl.arrow.has(e.id) });
+    }
+    for (const l of M.looseOf(doc)) {
+      const box = boxAt(l.id);
+      let path: Float64Array, hidden: boolean, back = false;
+      if (box) {
+        // A straight arrow along the flow through the box: its label, then one label-height of line each side.
+        const lab = this.sizes.get(labelKey(l.id)) ?? LOOSE_LABEL_SIZE;
+        const d = flowDirection(orient, box, r);
+        const len = (Math.abs(d.x) > Math.abs(d.y) ? lab.w : lab.h) + 2 * lab.h;
+        const x0 = box.x - (d.x * len) / 2, y0 = box.y - (d.y * len) / 2, x1 = box.x + (d.x * len) / 2, y1 = box.y + (d.y * len) / 2;
+        path = new Float64Array([x0, y0, x0 + (x1 - x0) / 3, y0 + (y1 - y0) / 3, x0 + (2 * (x1 - x0)) / 3, y0 + (2 * (y1 - y0)) / 3, x1, y1]);
+        hidden = !box.visible;
+      } else {
+        const o = r.edges[pl.partOf.get(l.id) ?? -1];
+        if (!o) continue;
+        path = o.path;
+        hidden = o.hidden;
+        back = o.back;
+      }
+      const samples = sample(path, SAMPLES);
+      const pc = hidden && foldedCenter(edgeGroup(l.id));
+      if (pc) for (let i = 0; i < samples.length; i += 2) { samples[i] = pc.x; samples[i + 1] = pc.y; }
+      edges.set(l.id, { path, samples, back, hidden, from: l.from ?? '', to: l.to ?? '', arrow: true });
     }
     return { orient, width: r.width, height: r.height, crossings: r.crossings, ms: r.ms, nodes, groups, edges, carriers, carrierOf: pl.carrierOf };
   }
@@ -2012,6 +2087,7 @@ export class LodeFlowElement extends Base {
         const b = shapeBounds(gg.shape);
         if (b) w = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
       } else if (target) w = target;
+      else if (M.looseById(this._doc, a.id)) w = this.edgeAnchor(a.id, true);
       if (w) {
         this.view = { ...this.view, cam: pin(this.view.cam, this.vw, this.vh, w, a.screen) };
         this.animateCamera();
@@ -2465,7 +2541,7 @@ export class LodeFlowElement extends Base {
     const ph = this.puck.offsetHeight;
     let px = vw - pw - 8;
     let py = 8;
-    if (!this._doc.nodes.length) {
+    if (!hasDrawn(this._doc)) {
       px = (vw - pw) / 2;
       py = (vh - ph) / 2;
     } else if (this.geo) {
@@ -2480,9 +2556,9 @@ export class LodeFlowElement extends Base {
     this.kickstarterEl.hidden = !hint;
     this.kickstarterEl.firstElementChild!.textContent = this.touchContext ? 'Tap Add node' : 'Double-click anywhere';
     (this.kickstarterEl.lastElementChild as HTMLElement).hidden = this.touchContext;
-    this.kickstarterEl.classList.toggle('off', this._doc.nodes.length > 0);
-    this.kickstarterEl.setAttribute('aria-hidden', String(!hint || this._doc.nodes.length > 0));
-    if (hint && !this._doc.nodes.length) {
+    this.kickstarterEl.classList.toggle('off', hasDrawn(this._doc));
+    this.kickstarterEl.setAttribute('aria-hidden', String(!hint || hasDrawn(this._doc)));
+    if (hint && !hasDrawn(this._doc)) {
       const hw = this.kickstarterEl.offsetWidth;
       const hh = this.kickstarterEl.offsetHeight;
       this.kickstarterEl.style.transform = `translate(${Math.round((vw - hw) / 2)}px, ${Math.round(Math.max(8, py - hh - 18))}px)`;
@@ -2576,37 +2652,53 @@ export class LodeFlowElement extends Base {
     const nodes = sel.filter((id) => M.nodeById(doc, id));
     const groups = sel.filter((id) => M.groupById(doc, id));
     const edges = sel.filter((id) => M.edgeById(doc, id));
+    const loose = sel.filter((id) => M.looseById(doc, id));
     const ro = this.readonly_;
     const groupedNodes = nodes.filter((id) => M.nodeById(doc, id)?.group);
     // S / ⇧S step through a node's edges: offered on a lone node that has some, and on a lone edge.
     const one = sel.length === 1;
-    const steps = one && (edges.length === 1 || (nodes.length === 1 && doc.edges.some((e) => e.from === nodes[0] || e.to === nodes[0])));
+    const hanging = loose.length === 1 && !M.isFree(M.looseById(doc, loose[0])!);
+    const steps = one && (edges.length === 1 || hanging || (nodes.length === 1 && (doc.edges.some((e) => e.from === nodes[0] || e.to === nodes[0]) || M.looseOf(doc).some((l) => l.from === nodes[0] || l.to === nodes[0]))));
     const stepBtns = () => (steps ? this.flipBtn('nextedge', 'prevedge', ICON.nextEdge, ICON.prevEdge, 'Select edge', 'S', 'Select its next edge', 'the edge before') : '');
     // ↵ / ⇧↵ dive into and surface out of groups: offered wherever either would move the selection,
     // except on a lone node or edge, where ↵ edits (there is nothing inside it to dive into).
     const same = (a: string[]) => sameList(a, sel);
-    const levels = !(one && (nodes.length || edges.length)) && (!same(M.dive(doc, sel)) || !same(M.surface(doc, sel)));
+    const levels = !(one && (nodes.length || edges.length || loose.length)) && (!same(M.dive(doc, sel)) || !same(M.surface(doc, sel)));
+    const copyBtn = () => this.btn('copy', ICON.copy, 'Copy', K.copy);
     const levelBtns = () => (levels ? this.flipBtn('dive', 'surface', ICON.dive, ICON.surface, 'Dive', 'J', 'Select what is inside, opening a collapsed group', 'select the group around it', 'K') : '');
-    const key = [sel.join(','), ro, groupedNodes.join(','), steps, levels, groups.map((g) => M.groupById(doc, g)?.collapsed).join(','), edges.map((e) => M.connectionOf(doc, e)?.trunk.label ?? '').join(',')].join('|');
+    const key = [sel.join(','), ro, groupedNodes.join(','), steps, levels, groups.map((g) => M.groupById(doc, g)?.collapsed).join(','), edges.map((e) => M.connectionOf(doc, e)?.trunk.label ?? '').join(','), loose.map((id) => { const l = M.looseById(doc, id)!; return `${l.label ?? ''}>${l.from ?? ''}>${l.to ?? ''}`; }).join(',')].join('|');
     if (key === this.nodeMagKey) return;
     this.nodeMagKey = key;
     let html = '';
     if (!ro) {
       let del = 'Delete';
-      if (nodes.length === 1 && groups.length === 0 && edges.length === 0) {
+      if (one && nodes.length === 1) {
         html += this.btn('edit', ICON.edit, 'Edit', '↵');
         html += this.flipBtn('after', 'before', ICON.node, ICON.node, 'Add node', 'N', 'Add a node after it', 'a node before it');
         html += this.flipBtn('link', 'linkin', ICON.link, ICON.linkIn, 'Link', 'E', 'Link it to a node or an edge', 'link a node into it');
+        html += this.flipBtn('loose-out', 'loose-in', ICON.looseOut, ICON.before, 'Add edge', 'A', 'Add a loose edge leaving it', 'a loose edge into it');
         html += stepBtns();
         html += this.btn('group', ICON.group, 'Group', 'G');
-      } else if (groups.length === 1 && nodes.length === 0 && edges.length === 0) {
+        html += copyBtn();
+      } else if (loose.length === 1 && sel.length === 1) {
+        const l = M.looseById(doc, loose[0])!;
+        html += this.btn('edit', ICON.label, l.label ? 'Edit label' : 'Label', '↵');
+        if (l.label) html += this.btn('unlabel', ICON.unlabel, 'Remove label', '⇧⌫');
+        // Attach: E gives it an effect (its head), ⇧E a cause (its tail); only free ends are offered.
+        if (!l.from && !l.to) html += this.flipBtn('link', 'linkin', ICON.link, ICON.linkIn, 'Attach', 'E', 'Attach its head to a node', 'attach its tail to a node');
+        else if (!l.to) html += this.btn('link', ICON.link, 'Attach effect…', 'E');
+        else html += this.btn('linkin', ICON.linkIn, 'Attach cause…', '⇧E');
+        html += stepBtns();
+        html += copyBtn();
+      } else if (one && groups.length === 1) {
         const g = M.groupById(doc, groups[0])!;
         html += this.btn('edit', ICON.edit, 'Rename', '↵');
         html += levelBtns();
         html += this.btn('collapse', g.collapsed ? ICON.expand : ICON.collapse, g.collapsed ? 'Expand' : 'Collapse', 'C');
         html += this.btn('inside', ICON.plus, 'Node inside', 'N');
         html += this.btn('ungroup', ICON.ungroup, 'Ungroup', '⇧G');
-      } else if (edges.length === 1 && nodes.length === 0 && groups.length === 0) {
+        html += copyBtn();
+      } else if (one && edges.length === 1) {
         const c = M.connectionOf(doc, edges[0])!;
         html += this.btn('edit', ICON.label, c.trunk.label ? 'Edit label' : 'Label', '↵');
         if (c.trunk.label) html += this.btn('unlabel', ICON.unlabel, 'Remove label', '⇧⌫');
@@ -2617,18 +2709,21 @@ export class LodeFlowElement extends Base {
         else if (c.kind === 'fork') html += this.btn('link', ICON.link, 'Branch to…', 'E');
         else html += this.btn('linkin', ICON.linkIn, 'Join from…', '⇧E');
         html += stepBtns();
+        html += copyBtn();
         // A shared trunk removes the connection; a branch removes only its own cause or effect.
         if (c.junction && c.trunk.id === edges[0]) del = c.kind === 'fork' ? 'Delete fork' : 'Delete merge';
       } else {
         html += `<span class="count-chip">${sel.length} selected</span>`;
         html += levelBtns();
-        if (nodes.length || groups.length) html += this.btn('group', ICON.group, 'Group', 'G');
+        if (nodes.length || groups.length || loose.some((id) => M.isFree(M.looseById(doc, id)!))) html += this.btn('group', ICON.group, 'Group', 'G');
+        html += copyBtn();
       }
       if (groupedNodes.length) html += this.btn('remove-from-group', ICON.surface, 'Remove from group', '⇧G');
       html += this.btn('delete', ICON.trash, del, '⌫', 'danger');
     } else {
       html += `<span class="count-chip">${sel.length === 1 ? '1 selected' : `${sel.length} selected`}</span>`;
-      // Stepping, diving and surfacing only move the selection, so a read-only diagram offers them too.
+      // Copying, stepping, diving and surfacing change nothing here, so a read-only diagram offers them too.
+      html += copyBtn();
       html += levelBtns();
       html += stepBtns();
     }
@@ -2670,8 +2765,8 @@ export class LodeFlowElement extends Base {
     const r = this.hist.peekRedo();
     // Add stays available in the diagram toolbar and follows N's selection context.
     const add = !this.readonly_;
-    const layout = this._doc.nodes.length > 0;
-    const key = [u?.label, r?.label, !!this.panel, this.helpOpen, this.saveProblem, add, layout, this.fullscreen.active()].join('|');
+    const layout = hasDrawn(this._doc);
+    const key = [u?.label, r?.label, !!this.panel, this.helpOpen, this.saveProblem, add, layout, this.fullscreen.active(), add && !!lastCopied].join('|');
     if (key === this.puckKey) return;
     this.puckKey = key;
     const undoTitle = u ? `Undo ${esc(u.label)}${this.touchContext ? '' : ` (${K.undo})`}` : '';
@@ -2686,7 +2781,8 @@ export class LodeFlowElement extends Base {
     const addBtn = add ? layout
       ? this.flipBtn('addnode', 'addpick', ICON.node, ICON.node, 'Add node', 'N', 'Add a node', 'add before, or choose nodes to link to')
       : this.btn('addnode', ICON.node, 'Add node', 'N') : '';
-    this.keepFocus(this.puck, () => this.fillPuck(addBtn, undo, redo, saveNote, layout));
+    const pasteBtn = add && lastCopied ? this.btn('paste', ICON.paste, 'Paste', K.paste) : '';
+    this.keepFocus(this.puck, () => this.fillPuck(addBtn + pasteBtn, undo, redo, saveNote, layout));
   }
 
   private fillPuck(addBtn: string, undo: string, redo: string, saveNote: string, layout: boolean) {
@@ -2845,6 +2941,8 @@ export class LodeFlowElement extends Base {
       ${row('Long-press', 'Open layout controls right where you are')}
       ${row('Link', 'Select a node or edge, tap Link, then choose a destination. Linking from an edge creates a fork; linking a node into an edge creates a merge')}
       ${row('List checkboxes', 'Check several rows, then tap Link or Add node to act on them together')}
+      ${row('Copy / Paste', 'Select items and tap Copy; Paste in the diagram toolbar adds a copy, here or in another diagram on the page (into the selected group, if one is). Links between copied nodes come along; a copied edge whose ends stay behind arrives loose')}
+      ${row('Add edge', 'With a node selected, Add edge hangs a loose edge from it, labelled ‘relates to’. Select a loose edge and tap Attach to give it a cause or an effect')}
       ${row('Groups', 'Tap a group’s chevron to fold or unfold it. Its selection controls also offer Dive, Expand or Collapse')}
       ${row('Remove from group', 'Move selected nodes out one group level, keeping their links')}
       ${row('Web links', 'Tap an underlined URL in a node to open it in a new tab')}
@@ -2858,6 +2956,7 @@ export class LodeFlowElement extends Base {
       ${row('Click again', 'Edit its text (an edge: its label)')}
       ${row('⇧ / ' + (IS_MAC ? '⌘' : 'Ctrl') + ' click', 'Add to or remove from the selection')}
       ${row('Drag from a node', 'Link it: drop on another node, or on an edge to merge into it (Esc cancels). Drag from an edge to a node to create a shared outgoing fork. Hold it near the frame’s edge and the view moves that way, to reach nodes out of view. With a mouse; touch uses E’s list')}
+      ${row('Drag a loose edge', 'Drop it on a node to attach its free end (its head when both are free). Drag a node onto a loose edge to make the node its cause')}
       ${row('Drag elsewhere', 'Pan (layout places things, so nothing is dragged out of place). Touch: any drag pans')}
       ${row('⇧ drag', 'Select with a box')}
       ${row('Double-click', 'Add a node there (inside a group when over one)')}
@@ -2874,6 +2973,8 @@ export class LodeFlowElement extends Base {
       ${row('K (or ⇧↵)', 'Surface: the deepest selected items give way to the group around them, one level up; items higher up stay until the level reaches them. A group Dive opened closes again. From the top level: the whole diagram, nothing selected')}
       ${row('N / ⇧N', 'Add a node after / before the selected node. Nothing selected: N adds a node; ⇧N lists nodes for a new node to link before (↵) or after (⇧↵). An edge selected: N inserts a node in its middle. A plain edge or merge: ⇧N adds a new cause')}
       ${row('E / ⇧E (L / H)', 'Link from / into the selection, nearest first. Picking an edge creates a merge / fork. With an edge selected, choose nodes to branch to / join from')}
+      ${row('A / ⇧A', 'Add a loose edge, labelled ‘relates to’ and ready to retype: leaving / entering the selected node, or free at both ends with no node selected. E / ⇧E on a loose edge attaches its head / tail to a node')}
+      ${row(K.copy + ' · ' + K.cut + ' · ' + K.paste, 'Copy · cut · paste the selection, here or into another diagram. Links between copied nodes come along, and groups whose contents all come; a copied edge whose ends stay behind arrives loose. Plain text pastes as one node per line. A read-only diagram copies')}
       ${row('S / ⇧S', 'Select the selected node’s next edge / the edge before')}
       ${row('G / ⇧G', 'Group the selection / remove grouped nodes one level, or ungroup selected groups')}
       ${row('C', 'Collapse or expand the selected group')}
@@ -2932,7 +3033,17 @@ export class LodeFlowElement extends Base {
         if (one && M.edgeById(doc, one)) return this.splitEdge(one);
         return;
       case 'unlabel':
-        if (one && M.edgeById(doc, one)) return this.removeLabel(one);
+        if (one && (M.edgeById(doc, one) || M.looseById(doc, one))) return this.removeLabel(one);
+        return;
+      case 'loose-out':
+      case 'loose-in':
+        // A: a loose edge leaving the selected node (⇧A: one entering it); free at both ends otherwise.
+        if (one && M.nodeById(doc, one)) return this.addLooseAt(act === 'loose-out' ? { from: one } : { to: one });
+        return this.addLooseAt({ group: one && M.groupById(doc, one) ? one : null });
+      case 'copy':
+        return this.copyFromButton();
+      case 'paste':
+        if (lastCopied) return this.pasteItems(lastCopied);
         return;
       case 'cause':
         if (one && M.edgeById(doc, one)) return this.addCause(one);
@@ -2966,7 +3077,7 @@ export class LodeFlowElement extends Base {
         return this.stepEdges(act === 'nextedge' ? 1 : -1);
       case 'link':
       case 'linkin':
-        if (one && (M.nodeById(doc, one) || M.edgeById(doc, one))) return this.openLinker(one, this.lastPointerType !== 'touch', act === 'link' ? 'out' : 'in');
+        if (one && (M.nodeById(doc, one) || M.edgeById(doc, one) || M.looseById(doc, one))) return this.openLinker(one, this.lastPointerType !== 'touch', act === 'link' ? 'out' : 'in');
         return;
       case 'tight':
         return this.changeSetting('tightGroups', String(!doc.settings.tightGroups));
@@ -3014,6 +3125,99 @@ export class LodeFlowElement extends Base {
     }
   }
 
+  private pasteTarget = { copied: () => { this.puckKey = ''; this.schedule(); } };
+
+  /** True while the toolbar's Copy button runs the copy command (its event targets the page body). */
+  private clipWrote = false;
+
+  /** Does this diagram own a clipboard command: focus on its canvas or toolbars, not in a text box. */
+  private clipOwner(kind: 'copy' | 'cut' | 'paste'): boolean {
+    if (this.graphPresentation || this.editing || !this.connected) return false;
+    // A toolbar Copy arms its own diagram, and then no other diagram may answer, wherever focus is.
+    if (armedFlow) return armedFlow === this;
+    const a = this.root.activeElement as HTMLElement | null;
+    const onCanvas = a === this.vp || (!!a && (this.nodeMag.contains(a) || this.puck.contains(a)) && a.tagName !== 'INPUT');
+    if (!onCanvas) return false;
+    return kind === 'paste' || this.view.sel.length > 0;
+  }
+
+  /**
+   * ⌘C / ⌘X write the selection as a fragment: its own type, an HTML copy that carries it where
+   * the browser drops custom types (WebKit across origins), and plain words for other apps. ⌘V
+   * pastes a fragment, or plain text as one node per line. Text boxes, fields and selected text
+   * keep the browser's own behavior; so does a diagram presented as a graph. A copy with nothing
+   * to copy is left alone: cancelling it would empty the user's clipboard in Chromium.
+   */
+  private onClipboard = (e: Event) => {
+    const ce = e as ClipboardEvent;
+    if (ce.defaultPrevented) return;
+    const kind = ce.type.replace(/^before/, '') as 'copy' | 'cut' | 'paste';
+    if (!this.clipOwner(kind)) return;
+    // The before-events only enable the browser's Edit menu commands for a non-editable canvas.
+    if (ce.type.startsWith('before')) {
+      if (kind !== 'paste' || !this.readonly_) ce.preventDefault();
+      return;
+    }
+    if (kind === 'paste') {
+      ce.preventDefault();
+      if (this.readonly_) return this.nudge(this.hintPoint(), 'This diagram is read-only');
+      const frag = readClipboard(ce.clipboardData);
+      const lines = frag ? 0 : textLines(ce.clipboardData?.getData('text/plain') ?? '').length;
+      if (frag) this.pasteItems(frag);
+      else this.nudge(this.hintPoint(), lines > TEXT_LINES ? `Too much text: ${lines} lines, and a paste makes at most ${TEXT_LINES} nodes` : 'Nothing to paste');
+      return;
+    }
+    const frag = copyFragment(this._doc, this.view.sel);
+    if (!frag || !ce.clipboardData) return;
+    ce.preventDefault();
+    writeClipboard(ce.clipboardData, frag);
+    this.clipWrote = true;
+    this.remember(frag);
+    // A cut takes what was copied, groups that came along included, so pasting it back never doubles them.
+    if (kind === 'cut' && !this.readonly_) return this.deleteSelection('Cut', frag.groups.map((g) => g.id));
+    if (kind === 'cut') return this.nudge(this.hintPoint(), 'This diagram is read-only: copied, nothing removed');
+    this.announce(`Copied ${fragmentWords(frag)}.`);
+  };
+
+  /** Copy from the toolbar: the browser's copy command, so the fragment keeps its own type. */
+  private copyFromButton() {
+    const frag = copyFragment(this._doc, this.view.sel);
+    if (!frag) return this.nudge(this.hintPoint(), 'Select something to copy');
+    armedFlow = this;
+    this.clipWrote = false;
+    // WebKit can return false even when the copy worked, so the handler's own flag decides.
+    try { document.execCommand('copy'); } catch { /* falls back below */ } finally { armedFlow = null; }
+    if (this.clipWrote) return;
+    const html = new Blob([fragmentHtml(frag)], { type: 'text/html' });
+    const text = new Blob([fragmentText(frag)], { type: 'text/plain' });
+    const write = typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write
+      ? navigator.clipboard.write([new ClipboardItem({ 'text/html': html, 'text/plain': text })])
+      : navigator.clipboard?.writeText(encodeFragment(frag));
+    void write?.catch(() => undefined);
+    this.remember(frag);
+    this.announce(`Copied ${fragmentWords(frag)}.`);
+  }
+
+  private remember(frag: Fragment) {
+    lastCopied = frag;
+    for (const t of pasteTargets) t.copied();
+  }
+
+  /** Adds a copied fragment as new items, selected, at the pointer; into the group when one group is selected. */
+  private pasteItems(frag: Fragment) {
+    if (this.readonly_) return this.nudge(this.hintPoint(), 'This diagram is read-only');
+    const sel = this.view.sel;
+    const into = sel.length === 1 && M.groupById(this._doc, sel[0]) ? sel[0] : null;
+    const r = pasteFragment(this._doc, frag, into);
+    if (!r || !r.ids.length) return;
+    // Pasting into a folded group opens it, so what arrived can be seen (one step with the paste).
+    if (into && M.groupById(r.doc, into)?.collapsed) r.doc = M.setCollapsed(r.doc, into, false);
+    const label = `Paste ${fragmentWords(frag)}`;
+    const screen = this.hintPoint();
+    if (!this.commit(label, 'add', { doc: r.doc, view: { sel: r.ids } }, { anchor: this.view.follow ? null : { id: r.ids[0], screen } })) return;
+    this.announce(`${label}. ${this.touchContext ? 'Undo' : K.undo} takes it back.`);
+  }
+
   private addFree(group: string | null, at: Pt | null, where: Pt | null = null) {
     if (this.readonly_) return;
     const { doc, id } = M.addNode(this._doc, '', group);
@@ -3021,6 +3225,21 @@ export class LodeFlowElement extends Base {
     const e = this.commit('Add node', 'add', { doc, view: { sel: [id], follow: at ? false : this.view.follow } }, { anchor: { id, screen } });
     if (!e) return;
     this.startEdit(id, true, e);
+  }
+
+  /** A new loose edge (labelled ‘relates to’, the label ready to type over): free, or hanging from a node. */
+  private addLooseAt(at: { from?: string; to?: string; group?: string | null }) {
+    if (this.readonly_) return this.nudge(this.hintPoint(), 'This diagram is read-only');
+    const { doc, id } = M.addLoose(this._doc, at);
+    const node = at.from ?? at.to;
+    const s = node ? this.shownScreen(node) : null;
+    const screen = this.lastPointer && this.inViewport(this.lastPointer) ? this.lastPointer : { x: this.vw / 2, y: this.vh / 2 };
+    const label = at.from ? 'Add edge from' : at.to ? 'Add edge into' : 'Add edge';
+    const name = node ? ` ${M.label(M.nodeById(this._doc, node)?.text ?? '')}` : '';
+    const e = this.commit(label + name, 'add', { doc, view: { sel: [id] } }, { anchor: node ? (s && !this.view.follow ? { id: node, screen: s } : null) : { id, screen } });
+    if (!e) return;
+    this.startEdit(id);
+    this.editing?.ta.select();
   }
 
   private addLinked(anchor: string, dir: 'after' | 'before') {
@@ -3101,6 +3320,11 @@ export class LodeFlowElement extends Base {
   /** Takes the label off the selected edge (a merge's shared label for a branch); the edge stays. */
   private removeLabel(edgeId: string) {
     if (this.readonly_) return;
+    const l = M.looseById(this._doc, edgeId);
+    if (l) {
+      if (!l.label) return this.nudge(this.hintPoint(), 'This edge has no label');
+      return void this.commit('Remove label', 'edit', { doc: M.setLooseLabel(this._doc, edgeId, '') });
+    }
     const c = M.connectionOf(this._doc, edgeId);
     if (!c?.trunk.label) return this.nudge(this.hintPoint(), 'This edge has no label');
     this.commit('Remove label', 'edit', { doc: M.setEdgeLabel(this._doc, edgeId, '') });
@@ -3176,10 +3400,10 @@ export class LodeFlowElement extends Base {
     this.commit(g.collapsed ? 'Expand group' : 'Collapse group', 'collapse', { doc: M.setCollapsed(this._doc, gid, !g.collapsed), view: { sel: [gid] } }, { anchor: s ? { id: gid, screen: s } : null });
   }
 
-  private deleteSelection() {
+  private deleteSelection(verb: 'Delete' | 'Cut' = 'Delete', also: string[] = []) {
     if (this.readonly_ || !this.view.sel.length) return;
     const doc = this._doc;
-    const sel = [...this.view.sel];
+    const sel = [...new Set([...this.view.sel, ...also])];
     const b = this.selectionBounds();
     const where = b ? { x: b.x + b.w / 2, y: b.y + b.h / 2 } : { x: this.view.cam.x, y: this.view.cam.y };
     // Anchor on a surviving neighbour so the spot stays put.
@@ -3193,6 +3417,10 @@ export class LodeFlowElement extends Base {
     for (const e of doc.edges) {
       if (doomed.has(e.from) && !doomed.has(e.to)) anchor = anchor ?? e.to;
       if (doomed.has(e.to) && !doomed.has(e.from)) anchor = anchor ?? e.from;
+    }
+    for (const l of M.looseOf(doc)) {
+      const a = M.looseAnchor(l);
+      if (doomed.has(l.id) && a && !doomed.has(a)) anchor = anchor ?? a;
     }
     if (anchor && !M.nodeById(doc, anchor)) anchor = null;
     const r = M.deleteItems(doc, sel);
@@ -3208,8 +3436,8 @@ export class LodeFlowElement extends Base {
         ? `the edge ${singleEdge.junction && singleEdge.trunk.id !== sel[0] ? M.describeConnection(doc, singleEdge.kind === 'fork' ? { ...singleEdge, outputs: [M.edgeById(doc, sel[0])!.to] } : { ...singleEdge, inputs: [M.edgeById(doc, sel[0])!.from] }) : M.describeConnection(doc, singleEdge)}`
         : words.join(' and ');
     const aScreen = anchor ? this.shownScreen(anchor) : null;
-    this.commit(`Delete ${words.join(' and ')}`, 'delete', { doc: r.doc, view: { sel: [] } }, { where, anchor: anchor && aScreen ? { id: anchor, screen: aScreen } : null });
-    this.announce(`Deleted ${what}. ${this.touchContext ? 'Undo' : K.undo} brings it back.`);
+    this.commit(`${verb} ${words.join(' and ')}`, 'delete', { doc: r.doc, view: { sel: [] } }, { where, anchor: anchor && aScreen ? { id: anchor, screen: aScreen } : null });
+    this.announce(`${verb === 'Cut' ? 'Cut' : 'Deleted'} ${what}. ${this.touchContext ? 'Undo' : K.undo} brings it back.`);
   }
 
   private locateSelection() {
@@ -3263,14 +3491,17 @@ export class LodeFlowElement extends Base {
     const node = M.nodeById(this._doc, id);
     const group = node ? null : M.groupById(this._doc, id);
     // An edge's label lives on its connection's trunk: a branch edits its merge's shared label.
-    const conn = node || group ? null : M.connectionOf(this._doc, id);
-    if (!node && !group && !conn) return;
-    if (conn) {
-      const hadCarrier = !!this.carrierOfEdge(conn.trunk.id);
-      const at = this.edgeAnchor(conn.trunk.id) ?? this.edgeAnchor(id);
-      this.labelDraft = { edge: conn.trunk.id, text: conn.trunk.label ?? '' };
+    // A loose edge keeps its own.
+    const looseEdge = node || group ? null : M.looseById(this._doc, id);
+    const conn = node || group || looseEdge ? null : M.connectionOf(this._doc, id);
+    const owner = conn ? conn.trunk : looseEdge;
+    if (!node && !group && !owner) return;
+    if (owner) {
+      const hadCarrier = !!this.carrierOfEdge(owner.id);
+      const at = this.edgeAnchor(owner.id) ?? this.edgeAnchor(id);
+      this.labelDraft = { edge: owner.id, text: owner.label ?? '' };
       this.syncDom();
-      const key = plan(this._doc, this.labelDraft).carrierOf.get(conn.trunk.id);
+      const key = plan(this._doc, this.labelDraft).carrierOf.get(owner.id);
       const el = key ? this.carrierEls.get(key) : null;
       // A new label grows out of the middle of its edge.
       if (el && key && !hadCarrier && at) {
@@ -3285,8 +3516,8 @@ export class LodeFlowElement extends Base {
     else if (group) {
       const els = this.groupEls.get(id)!;
       host = group.collapsed ? (els.proxy.querySelector('.t') as HTMLElement) : (els.label.querySelector('.gt') as HTMLElement);
-    } else if (conn) {
-      const key = plan(this._doc, this.labelDraft).carrierOf.get(conn.trunk.id);
+    } else if (owner) {
+      const key = plan(this._doc, this.labelDraft).carrierOf.get(owner.id);
       host = (key && (this.carrierEls.get(key)?.querySelector('.t') as HTMLElement | null)) || null;
     }
     if (!host) {
@@ -3294,7 +3525,7 @@ export class LodeFlowElement extends Base {
       return;
     }
     const kind: EditState['kind'] = node ? 'node' : group ? 'group' : 'edge';
-    const original = node ? node.text : group ? group.text : conn!.trunk.label ?? '';
+    const original = node ? node.text : group ? group.text : owner!.label ?? '';
     const ta = h('textarea', 'ed', {
       rows: '1',
       'aria-label': { node: 'Node text', group: 'Group title', edge: 'Edge label' }[kind],
@@ -3304,9 +3535,9 @@ export class LodeFlowElement extends Base {
     ta.value = original;
     host.textContent = '';
     host.append(ta);
-    const container = node ? this.nodeEls.get(id)! : conn ? host.closest('.carrier')! : host.closest('.glabel, .proxy')!;
+    const container = node ? this.nodeEls.get(id)! : owner ? host.closest('.carrier')! : host.closest('.glabel, .proxy')!;
     container.classList.add('editing');
-    this.editing = { id: conn ? conn.trunk.id : id, kind, original, isNew, entry, ta };
+    this.editing = { id: owner ? owner.id : id, kind, original, isNew, entry, ta };
     const fitHeight = () => {
       ta.style.height = '0px';
       ta.style.height = `${ta.scrollHeight}px`;
@@ -3375,8 +3606,10 @@ export class LodeFlowElement extends Base {
     this.redraw = true;
     if (ed.kind === 'edge') {
       this.labelDraft = null;
-      if (save && text !== ed.original && M.edgeById(this._doc, ed.id)) {
-        this.commit(text.trim() ? `Label ${M.label(text, '')}` : 'Remove label', 'edit', { doc: M.setEdgeLabel(this._doc, ed.id, text) });
+      const loose = M.looseById(this._doc, ed.id);
+      if (save && text !== ed.original && (loose || M.edgeById(this._doc, ed.id))) {
+        const doc = loose ? M.setLooseLabel(this._doc, ed.id, text) : M.setEdgeLabel(this._doc, ed.id, text);
+        this.commit(text.trim() ? `Label ${M.label(text, '')}` : 'Remove label', 'edit', { doc });
       } else {
         this.dirtyDom = true;
         this.invalidate(true);
@@ -3878,6 +4111,11 @@ export class LodeFlowElement extends Base {
   /** What dropping a link from `source` at screen point `p` would do. */
   private linkTargetAt(source: string, p: Pt): { hit: Hit; ok: boolean; why: string | null } {
     const hit = this.pickAt(p);
+    // A loose edge dragged onto a node: the node takes its free end (its head when both are free).
+    if (M.looseById(this._doc, source)) {
+      const why = hit.type === 'node' && hit.id ? M.attachProblem(this._doc, source, hit.id) : null;
+      return { hit, ok: hit.type === 'node' && !!hit.id && !why, why };
+    }
     if (M.edgeById(this._doc, source)) {
       const why = hit.type === 'node' && hit.id ? M.forkProblem(this._doc, source, hit.id) : null;
       return { hit, ok: hit.type === 'node' && !!hit.id && !why, why };
@@ -3888,7 +4126,8 @@ export class LodeFlowElement extends Base {
       return { hit, ok: !why, why };
     }
     if (hit.type === 'edge' && hit.id) {
-      const why = M.mergeProblem(this._doc, source, hit.id);
+      // A node dragged onto a loose edge becomes its tail.
+      const why = M.looseById(this._doc, hit.id) ? M.attachProblem(this._doc, hit.id, source, 'from') : M.mergeProblem(this._doc, source, hit.id);
       return { hit, ok: !why, why };
     }
     return { hit, ok: false, why: null };
@@ -3967,12 +4206,27 @@ export class LodeFlowElement extends Base {
   private performLink(source: string, target: { type: 'node' | 'edge'; id: string }, via: 'drag' | 'list', keep = source): M.LinkResult | null {
     if (this.readonly_) return null;
     const doc = this._doc;
-    const fromEdge = !!M.edgeById(doc, source);
-    const r = fromEdge ? M.linkFromEdge(doc, source, target.id) : target.type === 'node' ? M.linkNodes(doc, source, target.id) : M.linkToEdge(doc, source, target.id);
+    const fromLoose = !!M.looseById(doc, source);
+    const intoLoose = !fromLoose && target.type === 'edge' && !!M.looseById(doc, target.id);
+    const fromEdge = !fromLoose && !!M.edgeById(doc, source);
+    // From the list (E) a loose edge's pick is its effect; a drag fills whichever end is free.
+    const r = fromLoose ? M.attachLoose(doc, source, target.id, via === 'list' ? 'to' : undefined)
+      : intoLoose ? M.attachLoose(doc, target.id, source, 'from')
+        : fromEdge ? M.linkFromEdge(doc, source, target.id) : target.type === 'node' ? M.linkNodes(doc, source, target.id) : M.linkToEdge(doc, source, target.id);
     const at = this.lastPointer ?? { x: this.vw / 2, y: this.vh / 2 };
     if ('error' in r) {
       this.nudge(at, r.error);
       return null;
+    }
+    if (fromLoose || intoLoose) {
+      const piece = M.looseById(doc, fromLoose ? source : target.id)!;
+      const node = M.label(M.nodeById(doc, fromLoose ? target.id : source)?.text ?? '');
+      const end = fromLoose ? M.freeEnd(piece, via === 'list' ? 'to' : undefined) : 'from';
+      const what = `Attach ${node} as the ${end === 'from' ? 'cause' : 'effect'} of ${piece.label ? M.label(piece.label) : 'the edge'}`;
+      const s = this.shownScreen(keep);
+      if (!this.commit(what, 'link', { doc: r.doc, view: { sel: via === 'drag' ? [r.trunk] : this.view.sel } }, { anchor: s && !this.view.follow ? { id: keep, screen: s } : null })) return null;
+      this.announce(`${what}. ${this.touchContext ? 'Undo' : K.undo} undoes it.`);
+      return r;
     }
     const src = M.label(M.nodeById(doc, source)?.text ?? '');
     const conn = target.type === 'edge' ? M.connectionOf(doc, target.id) : null;
@@ -4041,7 +4295,7 @@ export class LodeFlowElement extends Base {
         mark = { hit: { type: it.kind, id: it.id }, ok: true, why: null };
         if (this.linker.dir !== 'new') {
           src = back ? it.id : this.linker.source;
-          end = this.hitAnchor(back ? { type: M.edgeById(this._doc, this.linker.source) ? 'edge' : 'node', id: this.linker.source } : mark.hit, src);
+          end = this.hitAnchor(back ? { type: M.edgeById(this._doc, this.linker.source) || M.looseById(this._doc, this.linker.source) ? 'edge' : 'node', id: this.linker.source } : mark.hit, src);
         }
       }
     }
@@ -4095,13 +4349,16 @@ export class LodeFlowElement extends Base {
         if (i >= 0) out.push(c.kind === 'merge' ? c.branches[i].id : c.trunk.id);
         else if (o >= 0) out.push(c.kind === 'fork' ? c.branches[o].id : c.trunk.id);
       }
+      // Loose edges hanging from the node are its edges too.
+      for (const l of M.looseOf(doc)) if (l.from === pivot || l.to === pivot) out.push(l.id);
       return out;
     };
     let pivot: string | null = null;
+    const loose = one ? M.looseById(doc, one) : undefined;
     if (one && M.nodeById(doc, one)) pivot = one;
     else if (one && M.edgeById(doc, one)) {
       pivot = this.edgeCycle && around(this.edgeCycle.pivot).includes(one) ? this.edgeCycle.pivot : M.connectionOf(doc, one)?.inputs[0] ?? null;
-    }
+    } else if (loose && !M.isFree(loose)) pivot = M.looseAnchor(loose);
     if (!pivot) return this.nudge(this.hintPoint(), 'Select a node, then S steps through its edges');
     const list = this.clockwise(pivot, around(pivot));
     if (!list.length) return this.nudge(this.hintPoint(), 'This node has no edges yet — E links it');
@@ -4110,8 +4367,11 @@ export class LodeFlowElement extends Base {
     const next = list[at];
     this.edgeCycle = { pivot, at };
     const c = M.connectionOf(doc, next);
-    this.commit(c ? `Select ${M.describeConnection(doc, c)}` : 'Select edge', 'nav', { view: { sel: [next] } }, { coalesce: 900 });
-    this.announce(`Edge ${this.edgeCycle.at + 1} of ${list.length}: ${c ? M.describeConnection(doc, c) : ''}${c?.trunk.label ? `, labelled ${c.trunk.label}` : ''}`);
+    const l = c ? undefined : M.looseById(doc, next);
+    const what = c ? M.describeConnection(doc, c) : l ? this.looseWords(l) : '';
+    const label = c ? c.trunk.label : l?.label;
+    this.commit(what ? `Select ${what}` : 'Select edge', 'nav', { view: { sel: [next] } }, { coalesce: 900 });
+    this.announce(`Edge ${this.edgeCycle.at + 1} of ${list.length}: ${what}${label ? `, labelled ${label}` : ''}`);
   }
 
   /**
@@ -4164,7 +4424,9 @@ export class LodeFlowElement extends Base {
   private openLinker(source: string, focusInput: boolean, dir: Linker['dir'] = 'out') {
     const n = dir === 'new' ? null : M.nodeById(this._doc, source);
     const c = dir === 'new' ? null : M.connectionOf(this._doc, source);
-    if (this.readonly_ || (dir !== 'new' && !n && !c)) return;
+    const piece = dir === 'new' || n || c ? null : M.looseById(this._doc, source);
+    if (this.readonly_ || (dir !== 'new' && !n && !c && !piece)) return;
+    if (piece && !M.freeEnd(piece, dir === 'in' ? 'from' : 'to')) return this.nudge(this.hintPoint(), dir === 'in' ? 'This edge already has a cause' : 'This edge already has an effect');
     if (c && ((dir === 'out' && c.kind === 'merge') || (dir === 'in' && c.kind === 'fork'))) return this.nudge(this.hintPoint(), `This connection is already a ${c.kind}`);
     if (this.linker?.source === source && this.linker.dir === dir) {
       (this.linkerEl.querySelector('input') as HTMLInputElement | null)?.focus({ preventScroll: true });
@@ -4174,8 +4436,8 @@ export class LodeFlowElement extends Base {
     this.linker = { source, dir, filter: '', active: 0, items: [], receipt: null, focusInput, checked: [], anchor: null };
     this.linkerEntry = null;
     const back = dir === 'in';
-    const name = n ? M.label(n.text) : c ? M.describeConnection(this._doc, c) : '';
-    const title = dir === 'new' ? 'Add a node linked to…' : c ? (back ? `Join … into ${name}` : `Branch ${name} to…`) : back ? `Link … to ${name}` : `Link ${name} to…`;
+    const name = n ? M.label(n.text) : c ? M.describeConnection(this._doc, c) : piece?.label ? M.label(piece.label) : 'the edge';
+    const title = dir === 'new' ? 'Add a node linked to…' : piece ? (back ? `Attach a cause to ${name}` : `Attach an effect to ${name}`) : c ? (back ? `Join … into ${name}` : `Branch ${name} to…`) : back ? `Link … to ${name}` : `Link ${name} to…`;
     const filter = dir !== 'new' && !c ? 'Filter nodes and edges' : 'Filter nodes';
     const listName = dir === 'new' ? 'Nodes for the new node to link to' : back ? 'Nodes to link into it' : 'Link targets';
     // A pick acts on every checked row too; the commit bar says so and acts on the checked rows alone.
@@ -4301,15 +4563,20 @@ export class LodeFlowElement extends Base {
     const key = (x: LinkItem) => `${x.kind}:${x.id}`;
     const byKey = new Map(L.items.map((x) => [key(x), x]));
     for (const c of L.checked) if (!byKey.has(c)) byKey.set(c, this.linkItemOf(c));
-    const picks = [...new Set([...L.checked, ...(it ? [key(it)] : [])])].map((c) => byKey.get(c)!).filter((x) => x && x.id);
+    let picks = [...new Set([...L.checked, ...(it ? [key(it)] : [])])].map((c) => byKey.get(c)!).filter((x) => x && x.id);
     if (!picks.length) return;
+    // A loose end attaches to one node: with several rows checked, the active row wins.
+    if (picks.length > 1 && M.looseById(this._doc, L.source)) {
+      picks = [it && it.id ? it : picks[0]];
+      this.nudge(this.lastPointer ?? { x: this.vw / 2, y: this.vh / 2 }, 'A loose end attaches to one node; the others were left');
+    }
     if (L.dir === 'new') {
       const anchors = picks.filter((x) => x.kind === 'node').map((x) => x.id);
       this.closeLinker(false);
       return this.addLinkedTo(anchors, shift ? 'after' : 'before');
     }
     const back = L.dir === 'in';
-    const sourceType = M.edgeById(this._doc, L.source) ? 'edge' as const : 'node' as const;
+    const sourceType = M.edgeById(this._doc, L.source) || M.looseById(this._doc, L.source) ? 'edge' as const : 'node' as const;
     let ok: boolean;
     if (picks.length === 1) {
       const one = picks[0];
@@ -4327,7 +4594,8 @@ export class LodeFlowElement extends Base {
     const name = (x: LinkItem) => (x.kind === 'node' ? M.label(x.text, 'an empty node') : `the edge ${x.sub || x.text}`);
     const nodes = picks.filter((x) => x.kind === 'node');
     const edges = picks.filter((x) => x.kind === 'edge');
-    if (sourceType === 'edge' && !back) this.linker.receipt = `Branched to ${joinAnd(picks.map(name))}`;
+    if (M.looseById(this._doc, L.source) || M.looseById(this.hist.peekUndo()?.before.doc ?? this._doc, L.source)) this.linker.receipt = `Attached ${joinAnd(picks.map(name))}`;
+    else if (sourceType === 'edge' && !back) this.linker.receipt = `Branched to ${joinAnd(picks.map(name))}`;
     else if (back) this.linker.receipt = `Linked from ${joinAnd(picks.map(name))}`;
     else if (!nodes.length) this.linker.receipt = `Merged into ${joinAnd(edges.map((x) => x.sub || x.text))}`;
     else this.linker.receipt = `Linked to ${joinAnd(nodes.map(name))}${edges.length ? `; merged into ${joinAnd(edges.map((x) => x.sub || x.text))}` : ''}`;
@@ -4348,8 +4616,16 @@ export class LodeFlowElement extends Base {
       const n = M.nodeById(this._doc, id);
       return { kind: 'node', id: n ? id : '', text: n?.text || 'Empty node', sub: '', empty: !n?.text.trim() };
     }
+    const l = M.looseById(this._doc, id);
+    if (l) return { kind: 'edge', id, text: l.label?.trim() || 'Loose edge', sub: this.looseWords(l), empty: false };
     const c = M.connectionOf(this._doc, id);
     return { kind: 'edge', id: c ? id : '', text: c ? c.trunk.label?.trim() || M.describeConnection(this._doc, c) : '', sub: c && c.trunk.label?.trim() ? M.describeConnection(this._doc, c) : '', empty: false };
+  }
+
+  /** Plain words for a loose edge's ends: ‘A’ → …, … → ‘B’ or … → …. */
+  private looseWords(l: M.FlowLoose): string {
+    const t = (id?: string) => (id ? M.label(M.nodeById(this._doc, id)?.text ?? '') : '…');
+    return `${t(l.from)} → ${t(l.to)}`;
   }
 
   /** ⌘-click / ⌘↵ (or ⇧↑↓ with `on`): check or uncheck one row; it becomes the start of a ⇧-click run. */
@@ -4395,12 +4671,13 @@ export class LodeFlowElement extends Base {
     const back = L.dir === 'in';
     const fresh = L.dir === 'new';
     const sourceEdge = !!M.edgeById(doc, L.source);
+    const sourceLoose = !!M.looseById(doc, L.source);
     // A new node's list is ordered from the middle of the view (it has no place of its own yet).
     const from = (L.source && this.shownScreen(L.source)) || { x: this.vw / 2, y: this.vh / 2 };
     const dist = (p: Pt | null) => (p ? Math.hypot(p.x - from.x, p.y - from.y) : Infinity);
     const nodes: (LinkItem & { d: number })[] = [];
     for (const n of doc.nodes) {
-      if (!fresh && (sourceEdge ? (back ? M.mergeProblem(doc, n.id, L.source) : M.forkProblem(doc, L.source, n.id)) : (back ? M.linkProblem(doc, n.id, L.source) : M.linkProblem(doc, L.source, n.id)))) continue;
+      if (!fresh && (sourceLoose ? M.attachProblem(doc, L.source, n.id, back ? 'from' : 'to') : sourceEdge ? (back ? M.mergeProblem(doc, n.id, L.source) : M.forkProblem(doc, L.source, n.id)) : (back ? M.linkProblem(doc, n.id, L.source) : M.linkProblem(doc, L.source, n.id)))) continue;
       // Hidden in a collapsed group: judged by the current layout, not the frame still on screen.
       if (this.geo?.nodes.get(n.id)?.visible === false) continue;
       nodes.push({ kind: 'node', id: n.id, text: n.text.trim() ? n.text : 'Empty node', sub: '', empty: !n.text.trim(), d: dist(this.shownScreen(n.id)) });
@@ -4413,6 +4690,12 @@ export class LodeFlowElement extends Base {
       const words = M.describeConnection(doc, c);
       const lbl = c.trunk.label?.trim();
       edges.push({ kind: 'edge', id: c.trunk.id, text: lbl ? c.trunk.label! : words, sub: lbl ? words : '', empty: false, d: dist(this.shownScreen(c.trunk.id)) });
+    }
+    // Loose edges a node can take: their tail (E, link it onto one) or their head (⇧E, one into it).
+    for (const l of !fresh && !sourceEdge && !sourceLoose ? M.looseOf(doc) : []) {
+      if (M.attachProblem(doc, l.id, L.source, back ? 'to' : 'from')) continue;
+      if (this.geo?.edges.get(l.id)?.hidden) continue;
+      edges.push({ kind: 'edge', id: l.id, text: l.label?.trim() || 'Loose edge', sub: this.looseWords(l), empty: false, d: dist(this.shownScreen(l.id)) });
     }
     const f = L.filter.trim().toLowerCase();
     const keep = (it: LinkItem) => !f || `${it.text} ${it.sub}`.toLowerCase().includes(f);
@@ -4629,7 +4912,12 @@ export class LodeFlowElement extends Base {
     }
     if (mod && (k === 'a' || k === 'A')) {
       done();
-      const all = [...this._doc.nodes.filter((n) => this.geo?.nodes.get(n.id)?.visible !== false).map((n) => n.id)];
+      const all = [
+        ...this._doc.nodes.filter((n) => this.geo?.nodes.get(n.id)?.visible !== false).map((n) => n.id),
+        // A folded group shows as one card: Select all takes it whole (copying it brings what is inside).
+        ...this._doc.groups.filter((g) => this.geo?.groups.get(g.id)?.shape.kind === 'proxy').map((g) => g.id),
+        ...M.looseOf(this._doc).filter((l) => M.isFree(l) && this.geo?.edges.get(l.id)?.hidden !== true).map((l) => l.id),
+      ];
       return void this.commit('Select all', 'select', { view: { sel: all } });
     }
     if (k === 'Escape') {
@@ -4694,6 +4982,10 @@ export class LodeFlowElement extends Base {
       case 'N':
         done();
         return this.action(e.shiftKey ? 'addpick' : 'addnode');
+      case 'a':
+      case 'A':
+        done();
+        return this.action(e.shiftKey ? 'loose-in' : 'loose-out');
       case 'e':
       case 'E':
       case 'l':
@@ -4704,7 +4996,7 @@ export class LodeFlowElement extends Base {
         // ⇧E is the reverse link: the picked node links into the selected one. L is E (onward, to the
         // right in a left-to-right flow) and H is ⇧E (back); ⇧ turns either around.
         const back = (k === 'h' || k === 'H') !== e.shiftKey;
-        if (one && (M.nodeById(this._doc, one) || M.edgeById(this._doc, one)) && !this.readonly_) return this.openLinker(one, true, back ? 'in' : 'out');
+        if (one && (M.nodeById(this._doc, one) || M.edgeById(this._doc, one) || M.looseById(this._doc, one)) && !this.readonly_) return this.openLinker(one, true, back ? 'in' : 'out');
         return this.nudge(this.hintPoint(), this.readonly_ ? 'This diagram is read-only' : `Select a node or edge, then press ${back ? '⇧E (or H) to link into it' : 'E (or L) to link from it'}`);
       }
       case 's':
@@ -4731,8 +5023,8 @@ export class LodeFlowElement extends Base {
       case 'Delete':
       case 'Backspace':
         done();
-        // ⇧⌫ on an edge removes its label and keeps the edge.
-        if (e.shiftKey && one && M.edgeById(this._doc, one)) return this.removeLabel(one);
+        // ⇧⌫ on an edge, loose or not, removes its label and keeps the edge.
+        if (e.shiftKey && one && (M.edgeById(this._doc, one) || M.looseById(this._doc, one))) return this.removeLabel(one);
         return this.deleteSelection();
       case '=':
       case '+':
@@ -4801,6 +5093,11 @@ export class LodeFlowElement extends Base {
     for (const [id, g] of this.shown.groups) {
       if (g.po > 0.5 && g.shape.kind === 'proxy') items.push({ id, s: toScreen(this.camShown, this.vw, this.vh, { x: g.shape.x, y: g.shape.y }) });
     }
+    // A free loose edge stands alone, so the arrows visit it like a node; a hanging one is reached with S from its node.
+    for (const l of M.looseOf(this._doc)) {
+      const p = M.isFree(l) ? this.shownScreen(l.id) : null;
+      if (p) items.push({ id: l.id, s: p });
+    }
     if (!items.length) return;
     const cur = this.view.sel[this.view.sel.length - 1];
     const from = cur ? this.shownScreen(cur) : null;
@@ -4842,8 +5139,10 @@ export class LodeFlowElement extends Base {
       follow = false;
     }
     const item = M.nodeById(this._doc, pick);
-    this.commit(item ? `Select ${M.label(item.text)}` : 'Select group', 'nav', { view: { sel, cam, follow } }, { coalesce: 900 });
-    this.announce(item ? `Selected ${item.text || 'empty node'}` : 'Selected group');
+    const l = item ? undefined : M.looseById(this._doc, pick);
+    const what = item ? M.label(item.text) : l ? `loose edge${l.label ? ` ${l.label}` : ''}` : 'group';
+    this.commit(`Select ${what}`, 'nav', { view: { sel, cam, follow } }, { coalesce: 900 });
+    this.announce(item ? `Selected ${item.text || 'empty node'}` : `Selected ${what}`);
   }
 }
 
@@ -5010,4 +5309,85 @@ declare global {
   interface HTMLElementTagNameMap {
     'lode-flow': LodeFlowElement;
   }
+}
+
+/** A free loose edge's label size before it has been measured. */
+const LOOSE_LABEL_SIZE = { w: 64, h: 24 };
+
+/**
+ * The box a free loose edge takes in the layout: room for its label plus one label-height of line
+ * at each end, along either flow axis (one size for every direction, so auto orientation can lay
+ * out two directions from one input).
+ */
+function looseBox(label: { w: number; h: number } | undefined): { w: number; h: number } {
+  const l = label ?? LOOSE_LABEL_SIZE;
+  return { w: l.w + 2 * l.h, h: 3 * l.h };
+}
+
+/** The flow's direction at a point: fixed for straight flows; away from (or toward) the middle for radial ones. */
+function flowDirection(orient: EngineOrientation, at: { x: number; y: number }, r: { width: number; height: number }): Pt {
+  switch (orient) {
+    case 'tb': return { x: 0, y: 1 };
+    case 'bt': return { x: 0, y: -1 };
+    case 'lr': return { x: 1, y: 0 };
+    case 'rl': return { x: -1, y: 0 };
+    default: {
+      // The engine does not report the radial centre; the middle of the layout is close to it.
+      const dx = at.x - r.width / 2, dy = at.y - r.height / 2, len = Math.hypot(dx, dy);
+      if (len < 1) return { x: 0, y: orient === 'in-out' ? 1 : -1 };
+      const sign = orient === 'in-out' ? 1 : -1;
+      return { x: (sign * dx) / len, y: (sign * dy) / len };
+    }
+  }
+}
+
+/** Anything stored: nodes, groups or loose edges. */
+function hasContent(doc: FlowDoc): boolean {
+  return doc.nodes.length > 0 || doc.groups.length > 0 || M.looseOf(doc).length > 0;
+}
+
+/** Anything to lay out beyond empty groups (an empty diagram's toolbar sits in the middle). */
+function hasDrawn(doc: FlowDoc): boolean {
+  return doc.nodes.length > 0 || M.looseOf(doc).length > 0;
+}
+
+/** ‘3 nodes, 1 group and 2 edges’ for a fragment. */
+function fragmentWords(f: Fragment): string {
+  const edges = new Set(f.edges.map((e) => (f.junctions.some((j) => j.id === e.to || j.id === e.from) ? f.junctions.find((j) => j.id === e.to || j.id === e.from)!.id : e.id))).size + f.loose.length;
+  const parts: string[] = [];
+  if (f.nodes.length) parts.push(`${f.nodes.length} node${f.nodes.length === 1 ? '' : 's'}`);
+  if (f.groups.length) parts.push(`${f.groups.length} group${f.groups.length === 1 ? '' : 's'}`);
+  if (edges) parts.push(`${edges} edge${edges === 1 ? '' : 's'}`);
+  return joinAnd(parts) || 'nothing';
+}
+
+const CLIP_EVENTS = ['beforecopy', 'beforecut', 'beforepaste', 'copy', 'cut', 'paste'];
+
+function writeClipboard(dt: DataTransfer, frag: Fragment) {
+  dt.setData(MIME, encodeFragment(frag));
+  dt.setData('text/html', fragmentHtml(frag));
+  dt.setData('text/plain', fragmentText(frag));
+}
+
+/** A pasted fragment: its own type, else the HTML copy, else a JSON fragment as text, else plain lines. */
+function readClipboard(dt: DataTransfer | null): Fragment | null {
+  if (!dt) return null;
+  const own = decodeFragment(dt.getData(MIME));
+  if (own) return own;
+  const html = dt.getData('text/html');
+  if (html && typeof DOMParser !== 'undefined') {
+    const carried = new DOMParser().parseFromString(html, 'text/html').querySelector('[data-lodeflow]')?.getAttribute('data-lodeflow');
+    let text = '';
+    try { text = carried ? decodeURIComponent(carried) : ''; } catch { /* not ours */ }
+    const frag = text ? decodeFragment(text) : null;
+    if (frag) return frag;
+  }
+  const plain = dt.getData('text/plain');
+  return decodeFragment(plain) ?? textFragment(plain);
+}
+
+/** The fragment for rich-text targets: its words, carrying the fragment itself in an attribute. */
+function fragmentHtml(frag: Fragment): string {
+  const words = fragmentText(frag).split('\n').map((l) => `<div>${esc(l)}</div>`).join('');
+  return `<meta charset="utf-8"><div data-lodeflow="${encodeURIComponent(encodeFragment(frag))}">${words}</div>`;
 }

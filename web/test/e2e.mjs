@@ -1621,7 +1621,7 @@ await scenario('edges: click selects, click again labels, S / ⇧S (or Select ed
   await settle(page, 300);
   assert.deepEqual((await el(page)).sel, [id]);
   const acts = await E(page, () => [...document.querySelector('lode-flow').shadowRoot.querySelectorAll('.node-magnet .mb:not([hidden])')].map((b) => b.textContent));
-  assert.deepEqual(acts, ['Label↵', 'Insert nodeN', 'Add cause⇧N', 'Add effect', 'LinkE⇧E', 'Select edgeS⇧S', 'Delete⌫']);
+  assert.deepEqual(acts, ['Label↵', 'Insert nodeN', 'Add cause⇧N', 'Add effect', 'LinkE⇧E', 'Select edgeS⇧S', 'Copy⌘C', 'Delete⌫']);
   await shot(page, '18-edge-selected');
   await page.mouse.click(m.x, m.y);
   await settle(page, 300);

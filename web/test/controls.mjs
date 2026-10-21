@@ -633,7 +633,8 @@ try {
             await flow(touch, (f) => { f.removeAttribute('empty-hint'); f.finishEdit('discard'); }); await reset(touch, empty);
             await touch.locator('.puck [data-act="help"]').tap(); await settled(touch);
             assert.equal(await touch.locator('.help h2 span').textContent(), 'Gestures');
-            assert.equal(await touch.locator('.help tr').count(), 17);
+            assert.equal(await touch.locator('.help tr').count(), 18);
+            assert.match(await touch.locator('.help').textContent(), /Reverse edge/);
             assert.doesNotMatch(await touch.locator('.help').textContent(), /Double-tap/);
             assert.doesNotMatch(await touch.locator('.help').textContent(), /Esc|Ctrl|⌘|⇧|↵|Press \[|press [A-Z]|keyboard|Keys/);
             assert.deepEqual(await visibleHints(touch), []);

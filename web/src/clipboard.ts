@@ -113,6 +113,7 @@ export function copyFragment(doc: FlowDoc, sel: string[]): Fragment | null {
     const piece: FlowLoose = { id: l.id };
     if (hangs) piece[l.from ? 'from' : 'to'] = anchor!;
     if (l.label) piece.label = l.label;
+    if (!anchor && l.reversed) piece.reversed = true;
     if (!anchor && l.group && groups.has(l.group)) piece.group = l.group;
     out.loose.push(piece);
   }
@@ -166,6 +167,7 @@ export function pasteFragment(doc: FlowDoc, frag: Fragment, group: string | null
     else if (to) piece.to = to;
     if (l.label) piece.label = l.label;
     if (M.isFree(piece)) {
+      if (l.reversed) piece.reversed = true;
       const inner = l.group ? ids.get(l.group) : undefined;
       if (!inner) top.push(piece.id);
       const g = inner ?? into;

@@ -906,9 +906,8 @@ await scenario('mouse drag from a node to a node links them; the new edge is sel
   await page.keyboard.press('Control+z');
   await settle(page, 600);
   assert.equal(edgeId((await el(page)).doc, 'estimates', 'trust'), undefined, 'undo removes the link');
-  // Dropping on nothing, or on a node it already links to, changes nothing.
+  // Dropping on a node it already links to changes nothing. Empty-canvas drops add a child.
   const n0 = (await history(page)).length;
-  await drag(page, a, { x: a.x, y: a.y + 170 });
   const c = await center(page, '.node[data-id="pressure"]');
   await drag(page, a, c);
   await settle(page, 400);

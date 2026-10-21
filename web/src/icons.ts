@@ -15,6 +15,7 @@ export const ICON = {
   prevEdge: s('<circle cx="8" cy="8" r="2"/><path d="M8 2.2A5.8 5.8 0 002.2 8M3.9 6.5L2.2 8.1.6 6.4"/>'),
   label: s('<path d="M2 3.5h6.5l5 4.5-5 4.5H2z"/><circle cx="5" cy="8" r="1"/>'),
   unlabel: s('<path d="M2 3.5h6.5l5 4.5-5 4.5H2z"/><path d="M1.5 14L14.5 2"/>'),
+  reverse: s('<path d="M2 5h12M11 2l3 3-3 3M14 11H2M5 8l-3 3 3 3"/>'),
   plus: s('<path d="M8 3v10M3 8h10"/>'),
   group: s('<rect x="1.5" y="1.5" width="13" height="13" rx="3" stroke-dasharray="2.5 2"/><rect x="4.5" y="4.5" width="3" height="3" rx=".8"/><rect x="8.5" y="8.5" width="3" height="3" rx=".8"/>'),
   ungroup: s('<rect x="2" y="2" width="5" height="5" rx="1.2"/><rect x="9" y="9" width="5" height="5" rx="1.2"/><path d="M9.5 2.5l4 4M13.5 2.5l-4 4" stroke-width="1.2"/>'),

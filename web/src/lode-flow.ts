@@ -1947,7 +1947,8 @@ export class LodeFlowElement extends Base {
       if (box) {
         // A straight arrow along the flow through the box: its label, then one label-height of line each side.
         const lab = this.sizes.get(labelKey(l.id)) ?? LOOSE_LABEL_SIZE;
-        const d = flowDirection(orient, box, r);
+        const flow = flowDirection(orient, box, r);
+        const d = l.reversed ? { x: -flow.x, y: -flow.y } : flow;
         const len = (Math.abs(d.x) > Math.abs(d.y) ? lab.w : lab.h) + 2 * lab.h;
         const x0 = box.x - (d.x * len) / 2, y0 = box.y - (d.y * len) / 2, x1 = box.x + (d.x * len) / 2, y1 = box.y + (d.y * len) / 2;
         path = new Float64Array([x0, y0, x0 + (x1 - x0) / 3, y0 + (y1 - y0) / 3, x0 + (2 * (x1 - x0)) / 3, y0 + (2 * (y1 - y0)) / 3, x1, y1]);
@@ -2683,6 +2684,7 @@ export class LodeFlowElement extends Base {
       } else if (loose.length === 1 && sel.length === 1) {
         const l = M.looseById(doc, loose[0])!;
         html += this.btn('edit', ICON.label, l.label ? 'Edit label' : 'Label', '↵');
+        html += this.btn('reverse', ICON.reverse, 'Reverse edge', '⇧R');
         if (l.label) html += this.btn('unlabel', ICON.unlabel, 'Remove label', '⇧⌫');
         // Attach: E gives it an effect (its head), ⇧E a cause (its tail); only free ends are offered.
         if (!l.from && !l.to) html += this.flipBtn('link', 'linkin', ICON.link, ICON.linkIn, 'Attach', 'E', 'Attach its head to a node', 'attach its tail to a node');
@@ -2701,6 +2703,7 @@ export class LodeFlowElement extends Base {
       } else if (one && edges.length === 1) {
         const c = M.connectionOf(doc, edges[0])!;
         html += this.btn('edit', ICON.label, c.trunk.label ? 'Edit label' : 'Label', '↵');
+        html += this.btn('reverse', ICON.reverse, 'Reverse edge', '⇧R');
         if (c.trunk.label) html += this.btn('unlabel', ICON.unlabel, 'Remove label', '⇧⌫');
         html += this.btn('split', ICON.plus, 'Insert node', 'N');
         if (c.kind !== 'fork') html += this.btn('cause', ICON.before, 'Add cause', '⇧N');
@@ -2948,6 +2951,7 @@ export class LodeFlowElement extends Base {
       ${row('Web links', 'Tap an underlined URL in a node to open it in a new tab')}
       ${row('Fullscreen', 'Fill the screen with this diagram. Exit fullscreen returns it to the page')}
       ${row('Delete', 'Delete the selection. The diagram toolbar’s Undo brings it back')}
+      ${row('Reverse edge', 'Select an edge, then Reverse edge to turn its arrow around. A shared trunk reverses the whole fork or merge; a branch separates and reverses just that connection')}
       ${row('Layout', 'Change flow direction, spacing and grouping, or fit the diagram into view')}
       ${row('Undo / redo', 'Take back or repeat content and view changes from the diagram toolbar')}
       </table>` : `<h2><span>Gestures and keys</span><button class="mb" data-act="close-help" title="Close (Esc)" aria-label="Close (Esc)">${ICON.close}${kbd('Esc')}</button></h2>
@@ -2955,7 +2959,7 @@ export class LodeFlowElement extends Base {
       ${row('Click', 'Select a node, group or edge')}
       ${row('Click again', 'Edit its text (an edge: its label)')}
       ${row('⇧ / ' + (IS_MAC ? '⌘' : 'Ctrl') + ' click', 'Add to or remove from the selection')}
-      ${row('Drag from a node', 'Link it: drop on another node, or on an edge to merge into it (Esc cancels). Drag from an edge to a node to create a shared outgoing fork. Hold it near the frame’s edge and the view moves that way, to reach nodes out of view. With a mouse; touch uses E’s list')}
+      ${row('Drag from a node', 'Drop on empty canvas to add a child node, ready to type. Drop on another node to link, or on an edge to merge into it (Esc cancels). Drag from an edge to a node to create a shared outgoing fork. Hold it near the frame’s edge and the view moves that way, to reach nodes out of view. With a mouse; touch uses E’s list')}
       ${row('Drag a loose edge', 'Drop it on a node to attach its free end (its head when both are free). Drag a node onto a loose edge to make the node its cause')}
       ${row('Drag elsewhere', 'Pan (layout places things, so nothing is dragged out of place). Touch: any drag pans')}
       ${row('⇧ drag', 'Select with a box')}
@@ -2981,6 +2985,7 @@ export class LodeFlowElement extends Base {
       ${row('Fork an edge', 'Select an edge, then Add effect for a new destination, or E / Link to choose existing nodes. Dragging an edge onto a node also branches to it. All branches share the trunk’s label')}
       ${row('⌫', 'Delete the selection (a shared trunk deletes the whole merge or fork)')}
       ${row('⇧⌫', 'Remove the selected edge’s label; the edge stays')}
+      ${row('⇧R', 'Reverse the selected edge. A shared trunk reverses the whole fork or merge; a branch separates and reverses just that connection. Loose edges reverse too. Undo brings the previous direction back')}
       ${row(K.undo + ' / ' + K.redo, 'Undo / redo — content and view changes alike')}
       ${row(K.rewind + ' / ' + K.fastForward, 'Express rewind / fast-forward — undo / redo changes, skipping zoom and other camera moves, so the view stays put. Zoom out, rewind, then fast-forward to watch a change with more of the diagram in view')}
       ${row(K.all + ' · Esc', 'Select everything · deselect all')}
@@ -3034,6 +3039,9 @@ export class LodeFlowElement extends Base {
         return;
       case 'unlabel':
         if (one && (M.edgeById(doc, one) || M.looseById(doc, one))) return this.removeLabel(one);
+        return;
+      case 'reverse':
+        if (one && (M.edgeById(doc, one) || M.looseById(doc, one))) return this.reverseEdge(one);
         return;
       case 'loose-out':
       case 'loose-in':
@@ -3315,6 +3323,16 @@ export class LodeFlowElement extends Base {
     const e = this.commit('Insert node', 'add', { doc: r.doc, view: { sel: [r.id] } }, { anchor: s && !this.view.follow ? { id: r.id, screen: s } : null });
     if (!e) return;
     this.startEdit(r.id, true, e);
+  }
+
+  /** Reverses one connection, keeping it selected and recoverable through Undo. */
+  private reverseEdge(edgeId: string) {
+    if (this.readonly_) return;
+    const result = M.reverseEdge(this._doc, edgeId);
+    if ('error' in result) return this.nudge(this.hintPoint(), result.error);
+    if (this.commit('Reverse edge', 'edit', { doc: result.doc, view: { sel: [result.edge] } }, { anchor: this.defaultAnchor() })) {
+      this.announce('Edge reversed.');
+    }
   }
 
   /** Takes the label off the selected edge (a merge's shared label for a branch); the edge stays. */
@@ -3949,11 +3967,12 @@ export class LodeFlowElement extends Base {
       this.markLinkTarget(null);
       this.endEdgePan(g);
       this.schedule();
-      const over = g.over;
       if (cancelled || !g.target.id) return;
+      const over = this.inViewport(p) ? this.linkTargetAt(g.target.id, p) : null;
       if (over?.ok && over.hit.id) this.performLink(g.target.id, over.hit as { type: 'node' | 'edge'; id: string }, 'drag');
       else if (over?.why) this.nudge(p, over.why);
-      else if (Math.hypot(p.x - g.start.x, p.y - g.start.y) > 40) this.nudge(p, g.target.type === 'edge' ? 'Drop on a node to branch to it' : 'Drop on a node to link, or on an edge to merge');
+      else if (g.target.type === 'node' && over && (over.hit.type === 'empty' || over.hit.type === 'group')) this.addLinked(g.target.id, 'after');
+      else if (g.target.type === 'edge' && Math.hypot(p.x - g.start.x, p.y - g.start.y) > 40) this.nudge(p, 'Drop on a node to branch to it');
       return;
     }
     if (cancelled) {
@@ -5049,6 +5068,7 @@ export class LodeFlowElement extends Base {
       case 'r':
       case 'R':
         done();
+        if (e.shiftKey && one && (M.edgeById(this._doc, one) || M.looseById(this._doc, one))) return this.reverseEdge(one);
         return this.rotateTo(0);
       case 'o':
       case 'O': {

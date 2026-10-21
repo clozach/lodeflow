@@ -40,6 +40,8 @@ export interface FlowLoose {
   to?: string;
   label?: string;
   group?: string | null;
+  /** A fully free arrow points against the diagram flow. Attached ends carry their own direction. */
+  reversed?: boolean;
 }
 
 /** The label a new loose edge starts with. */
@@ -202,6 +204,7 @@ export function normalizeDoc(raw: unknown, fallback: Partial<FlowSettings> = {})
     if (from) piece.from = from;
     if (to) piece.to = to;
     if (lbl.trim()) piece.label = lbl;
+    if (!from && !to && l?.reversed === true) piece.reversed = true;
     const g = l?.group == null ? null : str(l.group);
     if (!from && !to && g && gids.has(g)) piece.group = g;
     loose.push(piece);
@@ -756,6 +759,42 @@ export function linkEach(doc: FlowDoc, links: { from: string; fromType?: 'node' 
   return { doc: d, made, problems };
 }
 
+export type ReverseResult = { doc: FlowDoc; edge: string } | { error: string };
+
+/**
+ * Turns one arrow around. A shared trunk reverses the whole connection (merge ↔ fork); a
+ * branch detaches as an ordinary reverse edge, keeping its id and a copy of the shared label.
+ * A loose arrow swaps its attached end, or toggles its direction when both ends are free.
+ * Reversing into an existing semantic link is refused as a whole, so no edge or label is lost.
+ */
+export function reverseEdge(doc: FlowDoc, edgeId: string): ReverseResult {
+  const loose = looseById(doc, edgeId);
+  if (loose) {
+    const { from, to, reversed, ...rest } = loose;
+    const next: FlowLoose = isFree(loose)
+      ? { ...rest, ...(reversed ? {} : { reversed: true }) }
+      : { ...rest, ...(to ? { from: to } : { to: from }) };
+    return { doc: withLoose(doc, looseOf(doc).map((l) => l === loose ? next : l)), edge: edgeId };
+  }
+  const c = connectionOf(doc, edgeId);
+  const edge = edgeById(doc, edgeId);
+  if (!c || !edge) return { error: 'Select an edge' };
+  const branch = c.junction && edge.id !== c.trunk.id;
+  const inputs = branch && c.kind === 'merge' ? [edge.from] : c.inputs;
+  const outputs = branch && c.kind === 'fork' ? [edge.to] : c.outputs;
+  if (outputs.some((from) => inputs.some((to) => linked(doc, from, to)))) return { error: 'Already linked in that direction' };
+  if (branch) {
+    const next: FlowEdge = { ...edge, from: outputs[0], to: inputs[0] };
+    if (c.trunk.label) next.label = c.trunk.label;
+    if (c.trunk.back) next.back = true;
+    return { doc: tidyJunctions({ ...doc, edges: doc.edges.map((e) => e === edge ? next : e) }), edge: edgeId };
+  }
+  const ids = new Set([c.trunk.id, ...c.branches.map((b) => b.id)]);
+  const edges = doc.edges.map((e) => ids.has(e.id) ? { ...e, from: e.to, to: e.from } : e);
+  const junctions = c.junction ? doc.junctions.map((j) => j.id === c.junction ? { ...j, kind: c.kind === 'merge' ? 'fork' as const : 'merge' as const } : j) : doc.junctions;
+  return { doc: { ...doc, edges, junctions }, edge: edgeId };
+}
+
 /**
  * Puts a new node in the middle of an edge: from → new → to. The first half keeps its id, label
  * and loop hint, except an incoming fork trunk keeps them on the junction-side half so its label
@@ -940,6 +979,7 @@ export function attachLoose(doc: FlowDoc, id: string, node: string, want?: 'from
   const end = freeEnd(l, want)!;
   const next: FlowLoose = { ...l, [end]: node };
   delete next.group;
+  delete next.reversed;
   const rest = looseOf(doc).filter((x) => x.id !== id);
   if (next.from && next.to) {
     const edge: FlowEdge = { id, from: next.from, to: next.to };

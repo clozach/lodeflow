@@ -1,6 +1,6 @@
 // Copy/paste between diagrams, read-only sources and loose edges, in real browsers.
 //   node test/copy-paste.mjs          (BROWSERS=chromium,webkit picks engines)
-// Keys go through the browser's own copy and paste commands (Meta+C / Meta+V), so the clipboard
+// Keys go through the browser's own copy and paste commands (⌘C / ⌘V, Ctrl elsewhere), so the clipboard
 // events take the same route as a person's ⌘C; Playwright keeps that clipboard inside the browser.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -22,7 +22,8 @@ const source = {
   edges: [{ id: 'xy', from: 'x', to: 'y', label: 'binds' }, { id: 'yz', from: 'y', to: 'z' }],
   settings: { orientation: 'tb' },
 };
-const META = 'Meta';
+// ⌘ on macOS, Ctrl elsewhere: the key the browser's own copy and paste commands answer to.
+const META = 'ControlOrMeta';
 const results = [];
 const flow = (p, id, fn, arg) => p.locator(`#${id}`).evaluate(fn, arg);
 const settle = (p) => p.waitForTimeout(250);

@@ -17,6 +17,14 @@ const flow = (p, fn, arg) => p.locator('lode-flow').evaluate(fn, arg);
 const state = (p) => flow(p, (f) => f.getState());
 const doc = (p) => flow(p, (f) => f.doc);
 const settle = (p) => p.waitForTimeout(180);
+const waitForSize = (p) => flow(p, (f) => new Promise((resolve) => {
+  const ready = () => {
+    const vp = f.shadowRoot.querySelector('.vp');
+    if (f.vw === vp.clientWidth && f.vh === vp.clientHeight && !f.raf) resolve();
+    else requestAnimationFrame(ready);
+  };
+  requestAnimationFrame(ready);
+}));
 const pick = async (p, ids) => { await flow(p, (f, s) => { f.select(s); f.focus(); }, ids); await settle(p); };
 const reset = async (p, d = seed, ids = []) => {
   await flow(p, (f, { d, ids }) => {
@@ -132,24 +140,45 @@ try {
       await check(`${name}: Escape, pointer cancellation and off-frame drops do not add a child`, async () => {
         for (const finish of ['escape', 'cancel', 'outside']) {
           await reset(p);
-          const original = await doc(p), r = await p.locator('.node[data-id="a"]').boundingBox();
-          const x = r.x + r.width / 2, y = r.y + r.height / 2;
-          if (finish === 'cancel') await flow(p, (f) => {
-            const vp = f.shadowRoot.querySelector('.vp');
-            vp.addEventListener('pointerdown', (e) => { vp.dataset.testCancelPointerId = String(e.pointerId); }, { once: true });
-          });
-          await p.mouse.move(x, y); await p.mouse.down();
-          await p.mouse.move(finish === 'outside' ? 1120 : x + 170, y, { steps: 12 });
-          if (finish === 'escape') await p.keyboard.press('Escape');
-          if (finish === 'cancel') await flow(p, (f) => {
-            const vp = f.shadowRoot.querySelector('.vp'), recorded = vp.dataset.testCancelPointerId;
-            if (recorded === undefined) throw new Error('Native pointerdown was not observed');
-            delete vp.dataset.testCancelPointerId;
-            vp.dispatchEvent(new PointerEvent('pointercancel', { pointerId: Number(recorded), bubbles: true }));
-          });
-          await p.mouse.up(); await settle(p);
-          assert.deepEqual(await doc(p), original, finish);
-          assert.equal(await p.locator('textarea.ed').count(), 0, finish);
+          const style = await flow(p, (f) => f.getAttribute('style'));
+          try {
+            if (finish === 'outside') {
+              // Firefox's automation sends no pointerup beyond the browser viewport. Leave
+              // a real margin around this canvas so the release reaches the captured pointer.
+              await flow(p, (f) => Object.assign(f.style, { width: '900px', height: '650px', margin: '40px' }));
+              await waitForSize(p);
+            }
+            const original = await doc(p), r = await p.locator('.node[data-id="a"]').boundingBox();
+            const x = r.x + r.width / 2, y = r.y + r.height / 2;
+            const canvas = await flow(p, (f) => { const r = f.getBoundingClientRect(); return { right: r.right }; });
+            const dropX = finish === 'outside' ? canvas.right + 20 : x + 170;
+            if (finish === 'outside') {
+              assert.ok(dropX > canvas.right && dropX < p.viewportSize().width, 'release outside the canvas, inside the browser');
+              assert.ok(y > 0 && y < p.viewportSize().height, 'release stays inside the browser vertically');
+            }
+            if (finish === 'cancel') await flow(p, (f) => {
+              const vp = f.shadowRoot.querySelector('.vp');
+              vp.addEventListener('pointerdown', (e) => { vp.dataset.testCancelPointerId = String(e.pointerId); }, { once: true });
+            });
+            await p.mouse.move(x, y); await p.mouse.down();
+            await p.mouse.move(dropX, y, { steps: 12 });
+            if (finish === 'escape') await p.keyboard.press('Escape');
+            if (finish === 'cancel') await flow(p, (f) => {
+              const vp = f.shadowRoot.querySelector('.vp'), recorded = vp.dataset.testCancelPointerId;
+              if (recorded === undefined) throw new Error('Native pointerdown was not observed');
+              delete vp.dataset.testCancelPointerId;
+              vp.dispatchEvent(new PointerEvent('pointercancel', { pointerId: Number(recorded), bubbles: true }));
+            });
+            await p.mouse.up(); await settle(p);
+            assert.deepEqual(await doc(p), original, finish);
+            assert.equal(await p.locator('textarea.ed').count(), 0, finish);
+            assert.deepEqual(await flow(p, (f) => ({ gesture: f.gesture, pointers: [...f.pointers.keys()] })), { gesture: null, pointers: [] }, 'release clears the native drag state');
+          } finally {
+            if (finish === 'outside') {
+              await flow(p, (f, style) => style === null ? f.removeAttribute('style') : f.setAttribute('style', style), style);
+              await waitForSize(p);
+            }
+          }
         }
       });
 

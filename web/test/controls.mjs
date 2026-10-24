@@ -548,7 +548,7 @@ try {
             localStorage.setItem('host:appearance', 'blueprint');
             f.setAttribute('storage-key', 'reset-test');
             if (newNode) f.action('addnode'); else { f.startEdit('a'); f.persist(); }
-            f.editing.ta.value = 'Draft must disappear';
+            f.editing.editor.el.value = 'Draft must disappear';
             window.storageCalls = [];
             const set = Storage.prototype.setItem, remove = Storage.prototype.removeItem;
             Storage.prototype.setItem = function(k, v) { window.storageCalls.push(['set', k]); throw new DOMException('full', 'QuotaExceededError'); };
@@ -557,12 +557,12 @@ try {
             const before = f.persistTimer;
             let rejected = false;
             try { f.setDoc({ nodes: [], edges: [] }, { resetHistory: false, discardPendingSave: true }); } catch { rejected = true; }
-            const untouched = f.persistTimer === before && !!f.editing && f.editing.ta.value === 'Draft must disappear';
+            const untouched = f.persistTimer === before && !!f.editing && f.editing.editor.el.value === 'Draft must disappear';
             const count = f.doc.nodes.length + f.doc.edges.length + f.doc.groups.length + f.doc.junctions.length;
             f.setAttribute('max-items', String(count));
             let limitRejected = false;
             try { f.setDoc({ nodes: Array.from({ length: count + 1 }, (_, i) => ({ id: `over-${i}`, text: 'Too many' })), edges: [] }, { discardPendingSave: true }); } catch { limitRejected = true; }
-            const limitUntouched = f.persistTimer === before && !!f.editing && f.editing.ta.value === 'Draft must disappear';
+            const limitUntouched = f.persistTimer === before && !!f.editing && f.editing.editor.el.value === 'Draft must disappear';
             f.setDoc({ nodes: [{ id: 'fresh', text: 'Fresh baseline' }], edges: [] }, { discardPendingSave: true });
             f.removeAttribute('max-items');
             return { rejected, untouched, limitRejected, limitUntouched, timer: f.persistTimer, editing: !!f.editing, undo: f.canUndo, text: f.doc.nodes.map((n) => n.text) };

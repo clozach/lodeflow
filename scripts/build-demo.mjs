@@ -1,11 +1,14 @@
-// Writes one self-contained demo page (engine + element + sample inline), openable from file://.
+// Writes one self-contained demo page (engine + element + theditor + sample inline), openable from file://.
 //   node scripts/build-demo.mjs <out.html>
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const here = new URL('..', import.meta.url).pathname;
 const out = resolve(process.argv[2] || 'demo.html');
-const js = readFileSync(resolve(here, 'web/dist/lode-flow.iife.js'), 'utf8').replace(/<\/script/gi, '<\\/script');
+const inline = (name) => readFileSync(resolve(here, `web/dist/${name}`), 'utf8').replace(/<\/script/gi, '<\\/script');
+const js = inline('lode-flow.iife.js');
+// theditor after the core: formatted text in nodes (it reads the core's LodeFlow global).
+const theditorJs = inline('theditor.iife.js');
 const sample = readFileSync(resolve(here, 'examples/release-slip.json'), 'utf8');
 const html = `<!doctype html>
 <html lang="en">
@@ -48,6 +51,7 @@ const html = `<!doctype html>
   </div>
 </main>
 <script>${js}</script>
+<script>${theditorJs}</script>
 <script>
   const frame = document.getElementById('frame');
   const flow = document.getElementById('flow');

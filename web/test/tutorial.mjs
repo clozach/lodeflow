@@ -27,7 +27,16 @@ const undoHidden = async (page) => { const button = page.locator('#flow .puck [d
 const undoVisible = (page) => page.locator('#flow .puck [data-act="undo"]').waitFor({ state: 'visible', timeout: 5000 });
 const current = (page, id) => page.waitForFunction((id) => document.body.dataset.step === id, id);
 const select = (page, ids) => page.locator('#flow').evaluate((flow, ids) => { flow.select(Array.isArray(ids) ? ids : [ids]); flow.showSelection(); flow.focus(); }, ids);
-const enterText = async (page, text) => { await page.locator('textarea.ed').fill(text); await page.keyboard.press('Enter'); };
+/** The open editor: a node's theditor (the tutorial loads it) or the plain text box of groups and labels. */
+const EDITOR = 'textarea.ed, .fm-ed .ProseMirror';
+const editorText = (page) => page.locator(EDITOR).evaluate((e) => (e.tagName === 'TEXTAREA' ? e.value : e.textContent));
+/** Write into the open editor: fill() for the text box; keys for theditor (WebKit's fill() leaves a ProseMirror editor empty). */
+const fillEditor = async (page, text) => {
+  const editor = page.locator(EDITOR);
+  if (await editor.evaluate((e) => e.tagName === 'TEXTAREA')) return editor.fill(text);
+  await editor.focus(); await page.keyboard.press('ControlOrMeta+a'); await page.keyboard.type(text);
+};
+const enterText = async (page, text) => { await fillEditor(page, text); await page.keyboard.press('Enter'); };
 const edit = async (page, text) => { await page.keyboard.press('Enter'); await enterText(page, text); };
 const start = async (page) => { await page.locator('#flow').evaluate((flow) => flow.focus()); await page.keyboard.press('n'); await enterText(page, 'An idea'); await current(page, 'rename'); };
 const help = async (page, touch = false) => { if (!await page.locator('#appearance').isVisible()) await page.locator('#flow [data-act="help"]')[touch ? 'tap' : 'click'](); await page.locator('#appearance').waitFor({ state: 'visible' }); };
@@ -141,13 +150,13 @@ try {
         await page.locator('#flow').evaluate((flow) => flow.undo()); await current(page, 'label');
         const unrelated = { 'another-app:notes': 'Private notes', 'lodeflow:another-diagram:history': 'Other history', 'lodeflow:public-tutorial-v1': 'Old version data' };
         await page.evaluate((unrelated) => { for (const [key, value] of Object.entries(unrelated)) localStorage.setItem(key, value); }, unrelated);
-        await select(page, before.nodes[0].id); await page.keyboard.press('Enter'); await page.locator('textarea.ed').fill('A draft to discard');
+        await select(page, before.nodes[0].id); await page.keyboard.press('Enter'); await fillEditor(page, 'A draft to discard');
         await help(page);
         assert.equal(await page.locator('#hard-reset').getAttribute('title'), 'All data storage is local-only. Clicking this button resets the tutorial and deletes all your edits. ⚠️ Cannot be undone.');
         await page.evaluate(() => { window.removedKeys = []; const remove = Storage.prototype.removeItem; Storage.prototype.removeItem = function(key) { window.removedKeys.push(key); return remove.call(this, key); }; });
         await page.locator('#hard-reset').click(); await current(page, 'blank'); await undoHidden(page);
         assert.equal(countItems(await docOf(page)), 0); assert.equal(countItems(await docOf(page, 'guide')), 0);
-        assert.equal(await page.locator('textarea.ed').count(), 0);
+        assert.equal(await page.locator(EDITOR).count(), 0);
         assert.equal(await page.locator('#flow').evaluate((flow) => flow.canUndo || flow.canRedo), false);
         const saved = await page.evaluate(({ key, progressKey, appearanceKey, unrelated }) => ({ removed: window.removedKeys, state: JSON.parse(localStorage.getItem(key)), appearance: localStorage.getItem(appearanceKey), history: localStorage.getItem(`${key}:history`), progress: JSON.parse(localStorage.getItem(progressKey)), unrelated: Object.fromEntries(Object.keys(unrelated).map((key) => [key, localStorage.getItem(key)])) }), { key, progressKey, appearanceKey, unrelated });
         assert.deepEqual(saved.removed, [key, `${key}:history`, progressKey, appearanceKey]);
@@ -163,7 +172,7 @@ try {
       await scenario(browser, `${name}: capacity rejects atomically; oversized saved history stays protected`, async (page) => {
         await page.goto(url); await ready(page);
         await page.locator('#flow').evaluate((flow) => { flow.setDoc({ nodes: Array.from({ length: 98 }, (_, i) => ({ id: `n${i}`, text: `Idea ${i}` })), edges: [{ id: 'e', from: 'n0', to: 'n1' }], groups: [{ id: 'g', text: 'Group' }] }); flow.focus(); });
-        await page.keyboard.press('n'); assert.equal(await page.locator('textarea.ed').count(), 0); assert.equal(countItems(await docOf(page)), 100);
+        await page.keyboard.press('n'); assert.equal(await page.locator(EDITOR).count(), 0); assert.equal(countItems(await docOf(page)), 100);
         await select(page, 'n0'); await edit(page, 'Editable at capacity'); assert.equal((await docOf(page)).nodes[0].text, 'Editable at capacity');
         const rejected = await page.locator('#flow').evaluate((flow) => { try { flow.setDoc({ ...flow.doc, nodes: [...flow.doc.nodes, { id: 'overflow', text: 'Overflow' }] }); return false; } catch (error) { return error instanceof RangeError; } }); assert.equal(rejected, true);
         const oversized = { nodes: Array.from({ length: 101 }, (_, i) => ({ id: `n${i}`, text: `Idea ${i}` })), edges: [], groups: [], junctions: [] };
@@ -180,7 +189,7 @@ try {
       await scenario(browser, `${name}: corrupt, blocked and full storage remain usable`, async (page) => {
         await page.addInitScript(({ key }) => localStorage.setItem(key, '{ broken json'), { key });
         await page.goto(url); await ready(page); assert.equal(countItems(await docOf(page)), 0); assert.match(await page.locator('#notice').textContent(), /could not be read/); await start(page);
-        await select(page, (await docOf(page)).nodes[0].id); await page.keyboard.press('Enter'); await page.locator('textarea.ed').fill('Pending draft');
+        await select(page, (await docOf(page)).nodes[0].id); await page.keyboard.press('Enter'); await fillEditor(page, 'Pending draft');
         await help(page); await page.locator('#hard-reset').scrollIntoViewIfNeeded();
         // Inject quota failure at the reset click boundary. Before that click, a pending autosave
         // legitimately reclaims other histories, so poisoning storage earlier races this assertion.
@@ -200,14 +209,14 @@ try {
       await scenario(browser, `${name}: cross-tab import preserves an active draft and imports bound accomplishments`, async (page, context) => {
         await page.goto(url); await ready(page); await start(page); await waitProgress(page, 0);
         const other = await context.newPage(); await other.goto(url); await ready(other);
-        await select(page, (await docOf(page)).nodes[0].id); await page.keyboard.press('Enter'); await page.locator('textarea.ed').fill('Unfinished draft');
+        await select(page, (await docOf(page)).nodes[0].id); await page.keyboard.press('Enter'); await fillEditor(page, 'Unfinished draft');
         for (let index = 0; index < 4; index++) await clickStep(other, index);
         await waitProgress(other, 4); await page.locator('#tab-notice').waitFor({ state: 'visible' });
-        assert.equal(await page.locator('textarea.ed').inputValue(), 'Unfinished draft');
+        assert.equal(await editorText(page), 'Unfinished draft');
         await page.locator('#load-saved').click(); await current(page, 'label'); await undoHidden(page);
         assert.equal(countItems(await docOf(page)), 5);
         assert.equal((await docOf(page)).nodes[0].text, 'My first idea', 'explicit loading displays the chosen saved words');
-        assert.equal(await page.locator('textarea.ed').count(), 0, 'explicit loading ends the old draft');
+        assert.equal(await page.locator(EDITOR).count(), 0, 'explicit loading ends the old draft');
         await page.locator('#flow').evaluate((flow) => flow.undo()); await current(page, 'linked');
         assert.equal((await docOf(page)).nodes[0].text, 'Unfinished draft');
       });
@@ -242,17 +251,17 @@ try {
         await current(page, 'rename');
         await page.waitForTimeout(300); // Let the instruction graph resize the practice frame.
         const reachable = () => page.waitForFunction(() => {
-          const root = document.querySelector('#flow').shadowRoot, ta = root.querySelector('textarea.ed');
+          const root = document.querySelector('#flow').shadowRoot, ta = root.querySelector('textarea.ed, .fm-ed .ProseMirror');
           if (!ta) return false;
           const r = ta.getBoundingClientRect(), v = root.querySelector('.vp').getBoundingClientRect(), p = root.querySelector('.puck').getBoundingClientRect();
           const overlaps = r.left < p.right && r.right > p.left && r.top < p.bottom && r.bottom > p.top;
-          return r.top >= v.top && r.bottom <= v.bottom && r.left >= v.left && r.right <= v.right && !overlaps && root.activeElement === ta && root.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === ta;
+          return r.top >= v.top && r.bottom <= v.bottom && r.left >= v.left && r.right <= v.right && !overlaps && root.activeElement === ta && ta.contains(root.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
         }, null, {timeout:5000});
         await reachable();
         await page.setViewportSize({width:393,height:560}); await reachable();
         await page.keyboard.type('My reachable idea'); await page.keyboard.press('Enter');
         assert.equal((await docOf(page)).nodes[0].text, 'My reachable idea');
-        assert.equal(await page.locator('#flow textarea.ed').count(),0);
+        assert.equal(await page.locator(`#flow :is(${EDITOR})`).count(),0);
       }, {reducedMotion:'reduce'});
 
       await scenario(browser, `${name}: page-wide appearance and notices leave phone controls reachable`, async (page, context) => {
@@ -291,7 +300,7 @@ try {
       await scenario(browser, `${name}: phone instructions, native touch linking, menus and Blueprint`, async (page) => {
         await page.goto(url); await ready(page);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-        await page.locator('#flow [data-act="addnode"]').tap(); await page.locator('textarea.ed').fill('An idea');
+        await page.locator('#flow [data-act="addnode"]').tap(); await fillEditor(page, 'An idea');
         await page.locator('#flow .vp').tap({ position: { x: 15, y: 15 } }); await current(page, 'rename');
         for (let index = 0; index < 3; index++) await clickStep(page, index, true);
         const doc = await docOf(page), free = doc.nodes.find((node) => node.text === 'A different idea').id;

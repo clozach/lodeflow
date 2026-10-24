@@ -4,6 +4,8 @@ import { defineLodeFlow, LodeFlowElement } from './lode-flow';
 
 export { LodeFlowElement, defineLodeFlow };
 export type { LodeFlowActivation, LodeFlowGroupActivation, LodeFlowLayoutInfo, LodeFlowTiming } from './lode-flow';
+export { plainEditor } from './node-editor';
+export type { NodeEditor, NodeEditorFactory, NodeEditorHooks, NodeEditorKit, NodeEditorOptions, NodeEditorValue } from './node-editor';
 export * from './model';
 export type { Camera, ViewState, Entry, Snapshot } from './history';
 export { LayoutEngine, engine } from './engine';

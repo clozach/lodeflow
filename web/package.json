@@ -16,20 +16,27 @@
       "types": "./dist/types/react.d.ts",
       "import": "./dist/react.js"
     },
-    "./iife": "./dist/lode-flow.iife.js"
+    "./iife": "./dist/lode-flow.iife.js",
+    "./theditor": {
+      "types": "./dist/types/theditor/index.d.ts",
+      "import": "./dist/theditor.js"
+    },
+    "./theditor/iife": "./dist/theditor.iife.js"
   },
   "files": [
     "dist"
   ],
   "sideEffects": [
     "./dist/lode-flow.js",
-    "./dist/lode-flow.iife.js"
+    "./dist/lode-flow.iife.js",
+    "./dist/theditor.js",
+    "./dist/theditor.iife.js"
   ],
   "scripts": {
     "build": "node build.mjs",
     "dev": "node build.mjs --watch",
     "typecheck": "tsc --noEmit",
-    "test": "node test/model.mjs && node test/loose.mjs && node test/reverse.mjs && node test/fixture-controls.mjs && node test/geometry.mjs && node test/history.mjs && node test/limits.mjs && node test/placement.mjs && node test/presentation.mjs && node test/controls.mjs && node test/forks.mjs && node test/child-reverse.mjs && node test/copy-paste.mjs && node test/rotation.mjs && node test/e2e.mjs"
+    "test": "node test/model.mjs && node test/loose.mjs && node test/reverse.mjs && node test/fixture-controls.mjs && node test/geometry.mjs && node test/history.mjs && node test/limits.mjs && node test/placement.mjs && node test/presentation.mjs && node test/controls.mjs && node test/forks.mjs && node test/child-reverse.mjs && node test/copy-paste.mjs && node test/rotation.mjs && node test/e2e.mjs && node test/theditor.mjs"
   },
   "peerDependencies": {
     "react": ">=18"
@@ -40,6 +47,22 @@
     }
   },
   "devDependencies": {
+    "@tiptap/core": "3.10.8",
+    "@tiptap/extension-blockquote": "3.10.8",
+    "@tiptap/extension-bold": "3.10.8",
+    "@tiptap/extension-code": "3.10.8",
+    "@tiptap/extension-code-block": "3.10.8",
+    "@tiptap/extension-document": "3.10.8",
+    "@tiptap/extension-hard-break": "3.10.8",
+    "@tiptap/extension-heading": "3.10.8",
+    "@tiptap/extension-horizontal-rule": "3.10.8",
+    "@tiptap/extension-italic": "3.10.8",
+    "@tiptap/extension-link": "3.10.8",
+    "@tiptap/extension-list": "3.10.8",
+    "@tiptap/extension-paragraph": "3.10.8",
+    "@tiptap/extension-text": "3.10.8",
+    "@tiptap/extensions": "3.10.8",
+    "@tiptap/pm": "3.10.8",
     "@types/react": "^19.0.0",
     "esbuild": "^0.25.0",
     "playwright": "^1.63.0",

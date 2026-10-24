@@ -76,6 +76,7 @@ export function copyFragment(doc: FlowDoc, sel: string[]): Fragment | null {
     if (!nodes.has(n.id)) continue;
     const node: FlowNode = { id: n.id, text: n.text };
     if (n.group && groups.has(n.group)) node.group = n.group;
+    if (n.content) node.content = n.content;
     out.nodes.push(node);
   }
   let k = 0;
@@ -147,6 +148,7 @@ export function pasteFragment(doc: FlowDoc, frag: Fragment, group: string | null
     const inner = n.group ? ids.get(n.group) : undefined;
     if (!inner) top.push(ids.get(n.id)!);
     const node: FlowNode = { id: ids.get(n.id)!, text: n.text };
+    if (n.content) node.content = n.content;
     const g = inner ?? into;
     if (g) node.group = g;
     return node;

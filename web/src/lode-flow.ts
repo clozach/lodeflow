@@ -8,6 +8,7 @@ import { engine, type EngineInput, type EngineOrientation, type GroupShape, type
 import { CAMERA_KINDS, History, type Camera, type Entry, type EntryKind, type Snapshot, type ViewState } from './history';
 import { countItems, itemLimitProblem, parseMaxItems } from './item-limit';
 import { renderNodeText } from './node-links';
+import { nodeEditorKit, onNodeEditorKit, plainEditor, setNodeEditorKit, type NodeEditor, type NodeEditorKit, type NodeEditorValue } from './node-editor';
 import { fullscreenControl } from './fullscreen';
 import * as M from './model';
 import type { Compactness, FlowDoc, Orientation } from './model';
@@ -47,7 +48,7 @@ const K = {
   copy: IS_MAC ? '⌘C' : 'Ctrl+C',
   cut: IS_MAC ? '⌘X' : 'Ctrl+X',
   paste: IS_MAC ? '⌘V' : 'Ctrl+V',
-  addNext: IS_MAC ? '⌘↵' : 'Ctrl+Enter',
+  modEnter: IS_MAC ? '⌘↵' : 'Ctrl+Enter',
 };
 const SAMPLES = 24;
 /**
@@ -202,8 +203,14 @@ interface EditState {
   original: string;
   isNew: boolean;
   entry: Entry | null;
-  ta: HTMLTextAreaElement;
+  editor: NodeEditor;
 }
+/** What a node's text box last drew from formatted content (redrawn only when that changes). */
+const drawnContent = new WeakMap<HTMLElement, { content: M.FormattedDoc; json: string; links: boolean; kit: NodeEditorKit }>();
+/** The diagrams on the page, told when a node editor is registered. */
+const liveFlows = new Set<{ kitChanged(): void }>();
+onNodeEditorKit(() => liveFlows.forEach((f) => f.kitChanged()));
+const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 interface GroupEls {
   box: SVGPathElement;
   label: HTMLDivElement | HTMLButtonElement;
@@ -305,6 +312,15 @@ export interface LodeFlowGroupActivation {
 }
 
 export class LodeFlowElement extends Base {
+  /**
+   * Edit nodes with another editor (theditor, `lodeflow/theditor`, registers its own).
+   * Groups and edge labels keep the plain editor; `editor="plain"` keeps it for nodes too. Null
+   * returns to the plain editor.
+   */
+  static registerNodeEditor(kit: NodeEditorKit | null) {
+    setNodeEditorKit(kit);
+  }
+
   static get observedAttributes() {
     return ['orientation', 'bias', 'compactness', 'incremental', 'tight-groups', 'untangle', 'node-width', 'fit-min', 'readonly', 'presentation', 'node-activation', 'group-activation', 'empty-hint', 'storage-key', 'src', 'wheel', 'auto-orientations'];
   }
@@ -709,6 +725,8 @@ export class LodeFlowElement extends Base {
     if (!this.root) return;
     this.connected = true;
     pasteTargets.add(this.pasteTarget);
+    liveFlows.add(this.kitTarget);
+    this.kitChanged();
     // ⌘C / ⌘X / ⌘V arrive as the browser's own clipboard events. WebKit aims them at the outermost
     // shadow host and Chromium at the focused element, so each diagram listens on its document and
     // acts only when it holds focus.
@@ -756,6 +774,7 @@ export class LodeFlowElement extends Base {
   disconnectedCallback() {
     this.connected = false;
     pasteTargets.delete(this.pasteTarget);
+    liveFlows.delete(this.kitTarget);
     if (typeof document !== 'undefined') for (const type of CLIP_EVENTS) document.removeEventListener(type, this.onClipboard);
     this.fullscreen.disconnect();
     if (this.persistTimer) this.saveNow();
@@ -931,6 +950,21 @@ export class LodeFlowElement extends Base {
       }
     } else {
       this._doc = M.emptyDoc(this.attrSettings);
+      // Defined by a classic script in <head>, the element connects before the parser reaches its
+      // children: read the inline JSON once the page is parsed, unless a document arrived meanwhile.
+      const page = this.ownerDocument;
+      if (page?.readyState === 'loading') {
+        page.addEventListener('DOMContentLoaded', () => {
+          const late = this.querySelector('script[type="application/json"]');
+          if (!this.connected || hasContent(this._doc) || !late?.textContent?.trim()) return;
+          try {
+            this.setDoc(JSON.parse(late.textContent));
+          } catch (err) {
+            this.error = `Could not read the inline diagram JSON: ${(err as Error).message}`;
+            this.invalidate(false);
+          }
+        }, { once: true });
+      }
     }
     this.applyNodeWidth();
     // 3) src="…" loads asynchronously.
@@ -1547,7 +1581,7 @@ export class LodeFlowElement extends Base {
       }
       if (this.editing?.id !== n.id) {
         const t = el.firstElementChild as HTMLDivElement;
-        renderNodeText(t, n.text, !action);
+        this.drawNodeText(t, n, !action);
       }
       el.classList.toggle('sel', sel.has(n.id));
       el.setAttribute('aria-label', n.text || 'Empty node');
@@ -2286,8 +2320,8 @@ export class LodeFlowElement extends Base {
         els.box.style.visibility = o < 0.01 ? 'hidden' : '';
         els.label.style.transform = `translate(${label.x}px, ${label.y}px)`;
         const edG = this.editing?.id === id;
-        const editingLabel = edG && els.label.contains(this.editing!.ta);
-        const editingProxy = edG && els.proxy.contains(this.editing!.ta);
+        const editingLabel = edG && els.label.contains(this.editing!.editor.el);
+        const editingProxy = edG && els.proxy.contains(this.editing!.editor.el);
         // Keep the active title editor visible when its group changes shape, as with node/edge drafts.
         els.label.style.opacity = String(editingLabel ? 1 : o);
         els.label.style.visibility = o < 0.01 && !editingLabel ? 'hidden' : '';
@@ -2341,7 +2375,7 @@ export class LodeFlowElement extends Base {
   private revealEditor() {
     const ed = this.editing;
     if (!ed || !this.vw || !this.vh) return;
-    const el = ed.ta.closest('.node, .glabel, .proxy, .carrier') as HTMLElement;
+    const el = ed.editor.el.closest('.node, .glabel, .proxy, .carrier') as HTMLElement;
     const r = el.getBoundingClientRect();
     const vp = this.vp.getBoundingClientRect();
     let left = Math.max(vp.left, 0) + 8, top = Math.max(vp.top, 0) + 8;
@@ -2983,7 +3017,7 @@ export class LodeFlowElement extends Base {
       </table>
       <h4>Keys</h4><table>
       ${row('Arrows', 'Move the selection to the nearest item that way (⇧ adds)')}
-      ${row('↵ · F2', 'Edit the selected item (a group: its title) · then ↵ saves, ⇧↵ new line, Esc saves, and the item stays selected (Esc again deselects all), ' + K.addNext + ' saves and adds the next node')}
+      ${row('↵ · F2', 'Edit the selected item (a group: its title) · then ↵ saves, ⇧↵ new line, Esc saves, and the item stays selected (Esc again deselects all)')}
       ${row('J (or ↵ with several or none selected)', 'Dive: each selected group gives the selection over to what is inside it, one level down, opening a collapsed group; nodes stay selected. Nothing selected (thick blue frame): the top level')}
       ${row('K (or ⇧↵)', 'Surface: the deepest selected items give way to the group around them, one level up; items higher up stay until the level reaches them. A group Dive opened closes again. From the top level: the whole diagram, nothing selected')}
       ${row('N / ⇧N', 'Add a node after / before the selected node. Nothing selected: N adds a node; ⇧N lists nodes for a new node to link before (↵) or after (⇧↵). An edge selected: N inserts a node in its middle. A plain edge or merge: ⇧N adds a new cause')}
@@ -3009,6 +3043,9 @@ export class LodeFlowElement extends Base {
       ${row('⇧F', 'Fullscreen / exit fullscreen (Esc also exits)')}
       ${row('Web links', 'Click an underlined URL, or Tab to it and press Enter, to open it in a new tab')}
       </table>`;
+    // A registered node editor names what it adds (typed formatting, pasting images).
+    const extra = nodeEditorKit()?.help;
+    if (extra?.length) this.helpEl.insertAdjacentHTML('beforeend', `<h4>Writing in a node</h4><table>${extra.map(([k, d]) => row(escapeHtml(k), escapeHtml(d))).join('')}</table>`);
     this.helpEl.insertAdjacentHTML('beforeend', '<slot name="help" class="help-extra"></slot>');
     const slot = this.helpEl.querySelector<HTMLSlotElement>('slot')!;
     const syncSlot = () => { slot.hidden = slot.assignedElements().length === 0; };
@@ -3146,6 +3183,51 @@ export class LodeFlowElement extends Base {
 
   private pasteTarget = { copied: () => { this.puckKey = ''; this.schedule(); } };
 
+  private kitTarget = { kitChanged: () => this.kitChanged() };
+  private kitStyle: HTMLStyleElement | null = null;
+
+  /** A node editor was registered (or removed): its stylesheet, node drawing and Help follow. */
+  private kitChanged() {
+    const css = nodeEditorKit()?.css ?? '';
+    if (css && !this.kitStyle) {
+      this.kitStyle = document.createElement('style');
+      this.root.appendChild(this.kitStyle);
+    }
+    if (this.kitStyle && this.kitStyle.textContent !== css) this.kitStyle.textContent = css;
+    this.invalidate(true);
+    if (this.helpOpen) this.openHelp();
+  }
+
+  /** Draw a node's words, or its formatted content when a registered editor can draw it. */
+  private drawNodeText(t: HTMLElement, n: M.FlowNode, links: boolean) {
+    const kit = nodeEditorKit();
+    if (n.content && kit?.render) {
+      const last = drawnContent.get(t);
+      if (last && last.kit === kit && last.links === links && last.content === n.content) return;
+      const json = JSON.stringify(n.content);
+      if (last && last.kit === kit && last.links === links && last.json === json) {
+        last.content = n.content;
+        return;
+      }
+      t.textContent = '';
+      delete t.dataset.links;
+      let drawn = false;
+      try { drawn = kit.render(t, n.content, links); } catch { drawn = false; }
+      if (drawn) {
+        t.classList.add('fm');
+        drawnContent.set(t, { content: n.content, json, links, kit });
+        return;
+      }
+      drawnContent.delete(t);
+    }
+    if (drawnContent.delete(t) || t.classList.contains('fm')) {
+      t.classList.remove('fm');
+      t.textContent = '';
+      delete t.dataset.links;
+    }
+    renderNodeText(t, n.text, links);
+  }
+
   /** True while the toolbar's Copy button runs the copy command (its event targets the page body). */
   private clipWrote = false;
 
@@ -3258,7 +3340,6 @@ export class LodeFlowElement extends Base {
     const e = this.commit(label + name, 'add', { doc, view: { sel: [id] } }, { anchor: node ? (s && !this.view.follow ? { id: node, screen: s } : null) : { id, screen } });
     if (!e) return;
     this.startEdit(id);
-    this.editing?.ta.select();
   }
 
   private addLinked(anchor: string, dir: 'after' | 'before') {
@@ -3555,66 +3636,74 @@ export class LodeFlowElement extends Base {
     }
     const kind: EditState['kind'] = node ? 'node' : group ? 'group' : 'edge';
     const original = node ? node.text : group ? group.text : owner!.label ?? '';
-    const ta = h('textarea', 'ed', {
-      rows: '1',
-      'aria-label': { node: 'Node text', group: 'Group title', edge: 'Edge label' }[kind],
-      placeholder: { node: 'Type…', group: 'Untitled group', edge: 'Label…' }[kind],
-      spellcheck: 'true',
-    });
-    ta.value = original;
     host.textContent = '';
-    host.append(ta);
-    const container = node ? this.nodeEls.get(id)! : owner ? host.closest('.carrier')! : host.closest('.glabel, .proxy')!;
-    container.classList.add('editing');
-    this.editing = { id: owner ? owner.id : id, kind, original, isNew, entry, ta };
-    const fitHeight = () => {
-      ta.style.height = '0px';
-      ta.style.height = `${ta.scrollHeight}px`;
+    drawnContent.delete(host);
+    host.classList.remove('fm');
+    delete host.dataset.links;
+    const container = (node ? this.nodeEls.get(id)! : owner ? host.closest('.carrier')! : host.closest('.glabel, .proxy')!) as HTMLElement;
+    // Nodes take a registered editor (theditor, say); groups and edge labels stay plain.
+    const kit = node && this.getAttribute('editor') !== 'plain' ? nodeEditorKit() : null;
+    let editor: NodeEditor | null = null;
+    const hooks = {
+      onInput: () => {
+        if (!editor || this.editing?.editor !== editor) return;
+        if (kind === 'edge' && this.labelDraft) this.labelDraft.text = editor.value().text;
+        // Most keystrokes leave the box the same size: re-lay out only when it changed.
+        if (this.sizeChanged(container)) {
+          this.dirtyLayout = true;
+          this.schedule();
+        }
+      },
+      onKeydown: (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          // Esc keeps the words as last typed and leaves Edit mode; the item stays selected (a second
+          // Esc deselects all).
+          e.preventDefault();
+          this.finishEdit('save');
+          return true;
+        }
+        // ↵ saves; so does ⌘↵ (Ctrl+Enter), which no longer adds the next node: in tools that embed
+        // theditor it toggles a line's block control (Al, 2026-10-24), and theditor's kit takes it
+        // before this hook. ⇧↵ is the editor's own new line.
+        if (e.key === 'Enter' && (!e.shiftKey || e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          this.finishEdit('save');
+          return true;
+        }
+        return false;
+      },
+      onBlur: () => {
+        // Switching to another window or tab leaves Edit mode open: the box keeps focus for the
+        // return, so typing carries on (ending it there left focus on the page and keys went nowhere).
+        if (typeof document !== 'undefined' && !document.hasFocus()) return;
+        if (editor && this.editing?.editor === editor) this.finishEdit('save', false);
+      },
     };
-    fitHeight();
-    ta.addEventListener('input', () => {
-      fitHeight();
-      if (kind === 'edge' && this.labelDraft) this.labelDraft.text = ta.value;
-      // Most keystrokes leave the box the same size: re-lay out only when it changed.
-      if (this.sizeChanged(container as HTMLElement)) {
-        this.dirtyLayout = true;
-        this.schedule();
-      }
+    editor = (kit?.create ?? plainEditor)({
+      host,
+      kind,
+      initial: node ? { text: node.text, content: node.content } : { text: original },
+      placeholder: { node: 'Type…', group: 'Untitled group', edge: 'Label…' }[kind],
+      label: { node: 'Node text', group: 'Group title', edge: 'Edge label' }[kind],
+      hooks,
     });
-    ta.addEventListener('keydown', (e) => {
-      e.stopPropagation();
-      if (e.key === 'Escape') {
-        // Esc keeps the words as last typed and leaves Edit mode; the item stays selected (a second
-        // Esc deselects all).
-        e.preventDefault();
-        this.finishEdit('save');
-      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        const nid = this.editing?.kind === 'node' ? this.editing.id : null;
-        this.finishEdit('save');
-        if (nid && M.nodeById(this._doc, nid)) this.addLinked(nid, e.shiftKey ? 'before' : 'after');
-      } else if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        this.finishEdit('save');
-      }
-    });
-    ta.addEventListener('blur', () => {
-      // Switching to another window or tab leaves Edit mode open: the box keeps focus for the
-      // return, so typing carries on (ending it there left focus on the page and keys went nowhere).
-      if (typeof document !== 'undefined' && !document.hasFocus()) return;
-      if (this.editing?.ta === ta) this.finishEdit('save', false);
-    });
-    ta.addEventListener('pointerdown', (e) => e.stopPropagation());
+    const ed = editor;
+    // Keys and presses inside the editor stay there: none reach the diagram's own shortcuts.
+    if (ed.el.tagName !== 'TEXTAREA') ed.el.addEventListener('keydown', (e) => e.stopPropagation());
+    ed.el.addEventListener('pointerdown', (e) => e.stopPropagation());
+    container.classList.add('editing');
+    this.editing = { id: owner ? owner.id : id, kind, original, isNew, entry, editor: ed };
     this.nodeMag.hidden = true;
     this.redraw = true;
     // A hidden element cannot take focus: show the edited item right away, then focus.
-    (container as HTMLElement).style.visibility = '';
-    if (Number((container as HTMLElement).style.opacity || '1') < 0.5) (container as HTMLElement).style.opacity = '1';
+    container.style.visibility = '';
+    if (Number(container.style.opacity || '1') < 0.5) container.style.opacity = '1';
     const focusIt = () => {
-      if (this.editing?.ta !== ta || this.root.activeElement === ta) return;
-      ta.focus({ preventScroll: true });
-      const n = ta.value.length;
-      ta.setSelectionRange(n, n);
+      if (this.editing?.editor !== ed || ed.hasFocus()) return;
+      ed.focus();
+      // Edit mode opens with everything written selected (Al, 2026-10-23): typing replaces it, an
+      // arrow key steps to either end. New loose edges already did this; nodes, groups and labels join.
+      ed.selectAll();
     };
     focusIt();
     requestAnimationFrame(focusIt);
@@ -3628,10 +3717,12 @@ export class LodeFlowElement extends Base {
     if (!ed) return;
     this.editing = null;
     const save = how !== 'discard';
-    const text = save ? ed.ta.value : ed.original;
-    const container = ed.ta.closest('.node, .glabel, .proxy, .carrier');
+    const written: NodeEditorValue = save ? ed.editor.value() : { text: ed.original };
+    const text = written.text;
+    const container = ed.editor.el.closest('.node, .glabel, .proxy, .carrier');
     container?.classList.remove('editing');
-    ed.ta.remove();
+    ed.editor.destroy();
+    ed.editor.el.remove();
     this.redraw = true;
     if (ed.kind === 'edge') {
       this.labelDraft = null;
@@ -3647,7 +3738,12 @@ export class LodeFlowElement extends Base {
       if (refocus) this.vp.focus({ preventScroll: true });
       return;
     }
-    const setText = (d: FlowDoc) => (ed.kind === 'node' ? M.setNodeText(d, ed.id, text) : M.setGroupText(d, ed.id, text));
+    // A node keeps formatted content its editor handed back; plain words that changed drop it.
+    const before = ed.kind === 'node' ? M.nodeById(this._doc, ed.id) : null;
+    const formatted = save && ed.kind === 'node' && 'content' in written;
+    const contentChanged = formatted && JSON.stringify(written.content ?? null) !== JSON.stringify(before?.content ?? null);
+    const setText = (d: FlowDoc) => (ed.kind !== 'node' ? M.setGroupText(d, ed.id, text) : formatted ? M.setNodeContent(d, ed.id, written) : M.setNodeText(d, ed.id, text));
+    const changed = text !== ed.original || contentChanged;
     if (ed.isNew) {
       const abandoned = ed.kind === 'node' && (!save || !text.trim());
       const last = this.hist.peekUndo();
@@ -3674,7 +3770,7 @@ export class LodeFlowElement extends Base {
         } else {
           this.commit('Discard empty node', 'delete', { doc: M.dissolveNode(this._doc, ed.id), view: { sel: [] } });
         }
-      } else if (text !== ed.original) {
+      } else if (changed) {
         if (ed.entry && last === ed.entry && !this.hist.canRedo) {
           this._doc = setText(this._doc);
           const base = ed.entry.label;
@@ -3690,7 +3786,7 @@ export class LodeFlowElement extends Base {
       } else {
         this.invalidate(true);
       }
-    } else if (save && text !== ed.original) {
+    } else if (save && changed) {
       this.commit(ed.kind === 'node' ? `Edit ${M.label(text)}` : 'Rename group', 'edit', { doc: setText(this._doc) });
     } else {
       this.dirtyDom = true;
@@ -3801,7 +3897,7 @@ export class LodeFlowElement extends Base {
     this.wheelRotation = null;
     const p = this.local(e);
     this.lastPointer = p;
-    if ((e.target as Element).closest?.('textarea')) return;
+    if ((e.target as Element).closest?.('textarea') || this.editing?.editor.el.contains(e.target as Node)) return;
     // What was pressed, judged before an edit ends (ending it redraws the diagram).
     const pressed = this.withEdge(e.target, this.hit(e.target), p, e.pointerType !== 'mouse');
     const endedEdit = this.document_activeIsEditor();
@@ -4478,7 +4574,7 @@ export class LodeFlowElement extends Base {
       <div class="lk-receipt" role="status" hidden></div>
       <div class="lk-checked" hidden></div>
       <ul class="lk-list" id="lk-list" role="listbox" aria-multiselectable="true" aria-label="${listName}, nearest first"></ul>
-      <div class="lk-foot key-hint">${kbd('↑')}${kbd('↓')} choose · ${act} · ${IS_MAC ? '⌘' : 'Ctrl'}-click or ${kbd(K.addNext)} check more · ⇧-click ticks every row between · ${kbd('Esc')} close</div>`;
+      <div class="lk-foot key-hint">${kbd('↑')}${kbd('↓')} choose · ${act} · ${IS_MAC ? '⌘' : 'Ctrl'}-click or ${kbd(K.modEnter)} check more · ⇧-click ticks every row between · ${kbd('Esc')} close</div>`;
     const input = this.linkerEl.querySelector('input')!;
     input.addEventListener('input', () => {
       if (!this.linker) return;
@@ -4903,7 +4999,7 @@ export class LodeFlowElement extends Base {
       return;
     }
     if (this.graphPresentation) return;
-    if (this.editing && e.target === this.editing.ta) return;
+    if (this.editing && this.editing.editor.el.contains(e.target as Node)) return;
     const t = e.target as HTMLElement;
     // The link list handles its own keys.
     if (this.linker && t && this.linkerEl.contains(t)) return;

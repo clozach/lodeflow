@@ -45,7 +45,7 @@ Open `http://localhost:5207/`. Source changes rebuild and reload the preview aut
 .
   engine/     Rust crate (no_std + alloc on wasm32): graph → ranks → order → coordinates → routes
   web/        TypeScript custom element, React wrapper, esbuild bundles in dist/
-  examples/   standalone page, read-only embed, React and Svelte usage, sample diagram
+  examples/   standalone page, read-only embed, theditor in nodes, React and Svelte usage, sample diagram
   scripts/    builds, live tutorial preview, logo (build-logo.mjs draws site/logo*.svg and favicon.svg)
   site/       localStorage-only guided demo; built output in dist/
 ```
@@ -97,7 +97,7 @@ Three options sit on top of the rules, the first two on by default:
 <lode-flow src="diagram.json" style="height: 480px"></lode-flow>
 ```
 
-The diagram can also be inline: put a `<script type="application/json">…</script>` inside the element.
+The diagram can also be inline: put a `<script type="application/json">…</script>` inside the element. The classic script can sit in `<head>`: an element that connects before its inline JSON is parsed reads it once the page has loaded. A page opened from disk (`file://`) needs the classic scripts: Safari and Chrome refuse ES modules there.
 
 ### React
 
@@ -121,6 +121,24 @@ A read-only diagram copies; there `⌘X` copies and removes nothing, and `⌘V` 
 
 The clipboard carries three types: `application/x-lodeflow+json` (the fragment), `text/html` (readable words, with the fragment in a `data-lodeflow` attribute, because WebKit drops custom types between origins) and `text/plain` (each node on its own line, then each connection). Each diagram listens on its document and acts only while it holds focus, so two diagrams on a page never both paste.
 
+## theditor in nodes
+
+Load the optional theditor entry after lodeflow and nodes take formatted text: Markdown-style typing turns into formatting as it is typed, and an image pasted or dropped into a node becomes an inline thumb.
+
+```html
+<script src="lode-flow.iife.js"></script>
+<script src="theditor.iife.js"></script>   <!-- or, as modules: import 'lodeflow'; import 'lodeflow/theditor'; -->
+```
+
+- **Typing:** `*words*` or `**words**` bold, `_words_` italic, `` `words` `` code; at a line's start `# ` to `#### ` headings, `- ` bullets, `1. ` numbers, `- [ ] ` to-dos, `>v ` a toggle, `> ` a quote, `--- ` a hair line; `[words](https://…)` a link. `⌘B` / `⌘I` / `⌘E` (`Ctrl` elsewhere) format selected words. Help lists these while theditor is loaded.
+- **Keys:** Edit mode opens with everything selected, as the plain editor does. `↵` saves, `⇧↵` starts a new paragraph or list item, `Esc` saves. `⌘↵` (`Ctrl+Enter` elsewhere) is theditor's *toggle block control*: on a to-do's line it ticks or unticks the box, on a toggle (`>v ` at a line's start) it closes or opens it; on any other line it does nothing. A closed toggle opens again when the node is next edited: open or closed is not stored.
+- **Images:** a pasted or dropped image file is downscaled to at most 1024 px on its long side and stored in the document as WebP data (PNG where the browser cannot encode WebP). Each shows as a round-rect thumb a third of the node's text width, proportional to the original; three sit side by side before the next row. Images make documents, and a saved undo history, larger: a `storage-key` save keeps fewer history steps when the browser's storage fills.
+- **Document:** a formatted node keeps its words in `text` and its formatting in `content` (below). Plain paragraphs need no `content`. Links in drawn nodes open in a new tab, as plain web links do.
+- **Without theditor** (or with `editor="plain"` on the element): a node with `content` shows its `text`, and editing uses the plain text box. Saving unchanged words keeps the formatting; changed words drop it. `editor="plain"` still draws formatted content when theditor is loaded.
+- **Another editor:** `LodeFlowElement.registerNodeEditor(kit)` installs any editor for nodes (`kit.create` builds it from `{ host, kind, initial, placeholder, label, hooks }` and returns `{ el, focus, selectAll, value, hasFocus, destroy }`; `kit.render`, `kit.css` and `kit.help` draw content, add styles and Help rows). The element keeps Edit mode, saving, history and layout. theditor exports its own kit as `theditorKit` (global `Theditor.theditorKit` from the classic script); a React or Svelte host could register an editor written in its framework the same way. `null` returns to the plain editor.
+
+theditor is the formatted message editor of the swamikk CourseLit fork (github.com/clozach/swamikk, a private repository), on Tiptap 3.10.8. Its files are the author's own work, written for that fork, and are licensed here under MIT with the rest of lodeflow. Its framework-free core (the document model, the editor extensions, the editor-to-document conversion and the image stylesheet) is vendored by copy into `web/src/theditor/vendor/`, and those copies are the source in this repository. With a checkout of the fork, `node scripts/sync-theditor.mjs --from <checkout>` (or `THEDITOR_SOURCE=<checkout>`) refreshes the copies and `--check` reports any difference. Tiptap is bundled into `theditor.js` only; the core bundle carries just the document validator. `examples/theditor.html` loads both classic scripts, so it opens from disk as well as from a server.
+
 ## Document format
 
 ```json
@@ -133,6 +151,8 @@ The clipboard carries three types: `application/x-lodeflow+json` (the fragment),
   "settings": { "orientation": "auto", "bias": "start", "compactness": "comfortable", "incremental": false, "tightGroups": true, "untangle": true }
 }
 ```
+
+A node may also carry `content`, a formatted document (see *theditor in nodes*): `{ "type": "doc", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Ship", "marks": [{ "type": "bold" }] }] }] }`. It is kept only when the formatted message model accepts it (named nodes and marks, web links, image sources that are `http(s)` addresses, site paths or bitmap data) and holds formatting plain text cannot; the node's `text` is then derived from it (`**Ship**`, `- item`, `![alt]` for an image). Content the model refuses is dropped and the node keeps its `text`.
 
 Missing ids are generated. Edges that point at nothing, duplicates and self-loops are dropped. An edge with an end left out (no `from` or no `to`) is kept as a loose edge in `loose`; one there with both ends on nodes becomes an ordinary edge. A loose edge names at most one node (`from` its tail, `to` its head); a free one may sit in a `group` and set `reversed: true` to point against the flow. Attaching its first end clears `reversed`; its named endpoint then carries the direction. `loose` is absent when there are none. Each node holds one piece of text, drawn at a fixed width with auto height. An edge may carry a `label`. A junction with `kind: "merge"` (or no kind, for legacy documents) joins two or more incoming branches into one outgoing trunk. A junction with `kind: "fork"` splits one incoming trunk into two or more outgoing branches. The trunk holds the shared label. A junction left with fewer than two branches or no trunk is tidied away on load. Junction-to-junction chains and mixed many-to-many junctions are not supported. Labels such as “OR” are descriptive text, not executable logic. Older documents load unchanged.
 
@@ -239,7 +259,7 @@ Collapsing and expanding a group uses its collapsed card as the common origin. M
 Press `?` inside a diagram for the full list. The short version:
 
 - **The focus ring** on the frame's inside edge shows whether keys reach the diagram: thin while something is selected, thick while nothing is (`↵` then selects the top level), none while keys go elsewhere. Standard uses blue; Blueprint uses cyan for the thin ring and yellow for the thick one. A click on the background gives the diagram the keys.
-- **Click** selects a node, group or edge; **click the selected item again** (or `↵` or `F2` while it is the only thing selected) edits its text, label or group title (`↵` saves, `⇧↵` new line, `Esc` or a click on the bare canvas saves and leaves the item selected, `⌘↵`/`Ctrl+Enter` saves and adds the next node; `⌘Z` in the box takes back typing, and `⌘Z` after leaving it takes back the whole edit). `Esc` with nothing open, or a click on the bare canvas when not editing, deselects all. Switching to another window or tab keeps Edit mode open for your return.
+- **Click** selects a node, group or edge; **click the selected item again** (or `↵` or `F2` while it is the only thing selected) edits its text, label or group title (`↵` saves, `⇧↵` new line, `Esc` or a click on the bare canvas saves and leaves the item selected, `⌘↵`/`Ctrl+Enter` saves as `↵` does (with theditor loaded it toggles a node's to-do or toggle instead: *theditor in nodes*); `N` then adds the next node; `⌘Z` in the box takes back typing, and `⌘Z` after leaving it takes back the whole edit). `Esc` with nothing open, or a click on the bare canvas when not editing, deselects all. Switching to another window or tab keeps Edit mode open for your return.
 - **Web links in nodes** open in a new tab. Paste a complete `https://` or `http://` URL into the node text; after editing, click the underlined URL or Tab to it and press Enter. Clicking the surrounding text keeps the normal select/edit behavior. The stored text stays unchanged, including punctuation; HTML and other URL schemes remain plain text. Nodes configured for host activation keep their whole-node action rather than nesting a link inside a button.
 - **`J` dives** into groups: each selected group hands the selection to its own members, one level per press; nodes in the selection stay selected. A folded group opens on the way in, as its own undo step. **`K` surfaces**: the deepest selected items give way to the group around them, while items higher up stay until the level reaches theirs; a group `J` opened folds again on the way out (its own undo step) and stays selected, so the next `K` carries on up. With nothing selected, `J` selects the top level; from the top level, `K` goes up to the diagram itself (nothing selected). `↵` and `⇧↵` dive and surface too whenever more or less than one item is selected.
 - **Drag from a node** (mouse) links it: drop on a node, or on an edge to merge (`Esc` cancels). Holding the drag near the frame's edge moves the view that way (it starts gently, speeds up toward the edge, and stops once the diagram's far side is in view), so a node out of view can be reached without letting go; the view's move is one *Pan* step of its own, before the link. **Drag from an edge to a node** forks it. **Drag empty space** pans; on touch every one-finger drag pans. **⇧-drag** box-selects; **double-click** adds a node there.
@@ -260,7 +280,7 @@ Controls are **magnet controls**: they cling just outside what they act on (the 
 
 ```sh
 ./scripts/build-wasm.sh        # Rust → web/src/wasm-inline.ts (uses rustup's wasm32 target if installed)
-cd web && pnpm install && pnpm build   # dist/lode-flow.js, dist/lode-flow.iife.js, dist/react.js, dist/types/
+cd web && pnpm install && pnpm build   # dist/lode-flow.js, lode-flow.iife.js, react.js, theditor.js, theditor.iife.js, types/
 pnpm dev                       # esbuild watch + serve on :5207 (examples/standalone.html)
 ```
 
@@ -277,6 +297,8 @@ cd web && node test/geometry.mjs       # camera math: edge pan's speed curve and
 cd web && node test/history.mjs        # express rewind and fast-forward on 3,000 random histories
 cd web && node test/fixture-controls.mjs # URL parsing, moving nodes out of groups/history, fullscreen adapter contracts
 cd web && node test/e2e.mjs            # 78 browser scenarios in Chromium (Playwright, a dev dependency)
+cd web && node test/theditor.mjs       # theditor in nodes: editor keys, saved documents, pasted and dropped images, links, fallback
+node scripts/sync-theditor.mjs --check  # theditor's vendored core against a fork checkout in THEDITOR_SOURCE (unset: nothing to compare)
 cd web && node test/limits.mjs         # item-cap boundaries, atomic changes, loading/history, storage and built-in Blueprint
 cd web && node test/placement.mjs      # floating-control overlap at desktop and phone sizes
 node scripts/build-site.mjs && (cd web && node test/tutorial.mjs) # built Pages site in Chromium, Firefox and WebKit

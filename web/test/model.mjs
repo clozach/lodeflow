@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 const entry = process.env.MODEL || fileURLToPath(new URL('../src/model.ts', import.meta.url));
 const out = await build({ entryPoints: [entry], bundle: true, write: false, format: 'esm', platform: 'node', logLevel: 'error' });
-const { tidyJunctions, dissolveNode, normalizeDoc, dive, divePlan, surface, depthOf, parentOf, addLinkedTo, linkEach, commonGroup, connectionOf, connections, linked, linkFromEdge, forkProblem, mergeProblem, deleteItems, splitEdge, setEdgeLabel, addEffect, linkToEdge } = await import('data:text/javascript;base64,' + Buffer.from(out.outputFiles[0].text).toString('base64'));
+const { setNodeText, setNodeContent, tidyJunctions, dissolveNode, normalizeDoc, dive, divePlan, surface, depthOf, parentOf, addLinkedTo, linkEach, commonGroup, connectionOf, connections, linked, linkFromEdge, forkProblem, mergeProblem, deleteItems, splitEdge, setEdgeLabel, addEffect, linkToEdge } = await import('data:text/javascript;base64,' + Buffer.from(out.outputFiles[0].text).toString('base64'));
 
 const count = Number(process.argv[2] || 20000);
 let seed = 11;
@@ -278,6 +278,42 @@ for (let t = 0; t < count / 4 && failures < 5; t++) {
   assert.equal(plan(fork, {edge: first.edge, text: 'draft'}).carriers[0].text, 'draft');
   assert.equal(plan({...fork, groups: fork.groups.map(g => ({...g, collapsed: true}))}).carriers[0].group, 'inner');
   console.log('model: shared forks preserve trunk labels, merge migration, deletion, split/dissolve, nested groups, batch links and engine carriers');
+}
+
+{
+  // Formatted node content: kept only while the formatted message model accepts it and it holds
+  // formatting; the node's words are derived from it.
+  const bold = {type: 'doc', content: [{type: 'paragraph', content: [{type: 'text', text: 'bold', marks: [{type: 'bold'}]}, {type: 'text', text: ' words'}]}]};
+  const image = {type: 'doc', content: [{type: 'paragraph', content: [{type: 'image', attrs: {src: 'data:image/png;base64,iVBORw0KGgo=', alt: 'a cat', width: 0.333, look: 'plain', style: 'border-radius: 12px;padding:2px'}}]}]};
+  const kept = normalizeDoc({nodes: [{id: 'a', text: 'stale words', content: bold}]}).nodes[0];
+  assert.deepEqual(kept, {id: 'a', text: '**bold** words', content: bold}, 'valid content kept, text derived');
+  const pic = normalizeDoc({nodes: [{id: 'p', text: '', content: image}]}).nodes[0];
+  assert.equal(pic.text, '![a cat]');
+  assert.deepEqual(pic.content.content[0].content[0].attrs, {src: 'data:image/png;base64,iVBORw0KGgo=', alt: 'a cat', style: 'border-radius: 12px; padding: 2px'}, 'image defaults left out, style canonical');
+  const refused = [
+    {type: 'doc', content: [{type: 'paragraph', content: [{type: 'image', attrs: {src: 'javascript:alert(1)'}}]}]},
+    {type: 'doc', content: [{type: 'paragraph', content: [{type: 'image', attrs: {src: 'data:image/svg+xml;base64,PHN2Zz4='}}]}]},
+    {type: 'doc', content: [{type: 'paragraph', content: [{type: 'image', attrs: {src: '//evil.example/x.png'}}]}]},
+    {type: 'doc', content: [{type: 'paragraph', content: [{type: 'image', attrs: {src: 'https://example.com/x.png', style: 'background: url(https://evil.example)'}}]}]},
+    {type: 'doc', content: [{type: 'paragraph', content: [{type: 'image', attrs: {src: 'https://example.com/x.png', onload: 'x'}}]}]},
+    {type: 'doc', content: [{type: 'paragraph', content: [{type: 'text', text: 'x', marks: [{type: 'link', attrs: {href: 'javascript:alert(1)'}}]}]}]},
+    {type: 'doc', content: [{type: 'script'}]},
+    '<b>html</b>',
+    {type: 'doc'},
+  ];
+  // A style the canonical parser throws on (a prototype key it looks up as a rule) still only drops the content.
+  refused.push({type: 'doc', content: [{type: 'paragraph', content: [{type: 'image', attrs: {src: 'https://example.com/x.png', style: '__proto__: 1'}}]}]});
+  for (const content of refused) assert.deepEqual(normalizeDoc({nodes: [{id: 'x', text: 'words', content}]}).nodes[0], {id: 'x', text: 'words'}, `refused: ${JSON.stringify(content).slice(0, 80)}`);
+  const plain = {type: 'doc', content: [{type: 'paragraph', content: [{type: 'text', text: 'one'}]}, {type: 'paragraph', content: [{type: 'text', text: 'two'}]}]};
+  assert.deepEqual(normalizeDoc({nodes: [{id: 'x', text: 'ignored', content: plain}]}).nodes[0], {id: 'x', text: 'ignored'}, 'plain content is not kept');
+  const d = normalizeDoc({nodes: [{id: 'a', text: '', content: bold}, {id: 'b', text: 'B'}]});
+  assert.deepEqual(setNodeText(d, 'a', '**bold** words').nodes[0].content, bold, 'unchanged words keep the formatting');
+  assert.deepEqual(setNodeText(d, 'a', 'new words').nodes[0], {id: 'a', text: 'new words'}, 'changed plain words drop it');
+  assert.deepEqual(setNodeContent(d, 'b', {text: 'ignored', content: bold}).nodes[1], {id: 'b', text: '**bold** words', content: bold}, 'setNodeContent derives the text');
+  assert.deepEqual(setNodeContent(d, 'a', {text: 'plain again', content: undefined}).nodes[0], {id: 'a', text: 'plain again'}, 'no content: plain');
+  assert.deepEqual(setNodeContent(d, 'a', {text: 'kept text', content: refused[0]}).nodes[0], {id: 'a', text: 'kept text'}, 'refused content: plain');
+  assert.deepEqual(JSON.parse(JSON.stringify(normalizeDoc(JSON.parse(JSON.stringify(d))))), JSON.parse(JSON.stringify(d)), 'a saved document reloads unchanged');
+  console.log('model: formatted node content validated, text derived, plain saves keep or drop it');
 }
 
 console.log(failures ? `model: ${failures} failing documents` : `model: ${count} random documents tidied correctly; selection levels and multi-links hold`);

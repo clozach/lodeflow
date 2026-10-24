@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>lodeflow — theditor in nodes</title>
+  <style>
+    :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+    body { margin: 0; background: Canvas; color: CanvasText; display: flex; flex-direction: column; height: 100vh; }
+    p { margin: 0; padding: 10px 16px; font-size: 14px; line-height: 1.4; }
+    lode-flow { flex: 1; min-height: 0; }
+  </style>
+  <!-- Classic scripts, core first: the page opens from disk (file://) as well as from a server. -->
+  <script src="../web/dist/lode-flow.iife.js"></script>
+  <script src="../web/dist/theditor.iife.js"></script>
+</head>
+<body>
+  <p>Select a node and press <kbd>↵</kbd> to write in it: <code>*bold*</code>, <code>_italic_</code>, <code>- </code> for a list; <kbd>⇧↵</kbd> starts a new paragraph, <kbd>↵</kbd> saves, <kbd>⌘↵</kbd> ticks or unticks a to-do, and a picture you paste or drop becomes a thumb.</p>
+  <lode-flow node-width="220">
+    <script type="application/json">
+      {
+        "settings": { "orientation": "lr" },
+        "nodes": [
+          { "id": "plan", "text": "", "content": { "type": "doc", "content": [
+            { "type": "heading", "attrs": { "level": 2 }, "content": [{ "type": "text", "text": "Launch plan" }] },
+            { "type": "paragraph", "content": [{ "type": "text", "text": "Ship the " }, { "type": "text", "text": "beta", "marks": [{ "type": "bold" }] }, { "type": "text", "text": " with " }, { "type": "text", "text": "release notes", "marks": [{ "type": "italic" }] }] },
+            { "type": "taskList", "content": [
+              { "type": "taskItem", "attrs": { "checked": true }, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Freeze features" }] }] },
+              { "type": "taskItem", "attrs": { "checked": false }, "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Write the notes" }] }] }
+            ] }
+          ] } },
+          { "id": "review", "text": "Paste or drop three images here" },
+          { "id": "ship", "text": "", "content": { "type": "doc", "content": [
+            { "type": "paragraph", "content": [{ "type": "text", "text": "Announce on " }, { "type": "text", "text": "the blog", "marks": [{ "type": "link", "attrs": { "href": "https://example.com/blog" } }] }] },
+            { "type": "bulletList", "content": [
+              { "type": "listItem", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "mailing list" }] }] },
+              { "type": "listItem", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "v1.0", "marks": [{ "type": "code" }] }] }] }
+            ] }
+          ] } }
+        ],
+        "edges": [{ "from": "plan", "to": "review" }, { "from": "review", "to": "ship" }]
+      }
+    </script>
+  </lode-flow>
+</body>
+</html>

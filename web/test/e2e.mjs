@@ -267,7 +267,7 @@ await scenario('pan, zoom, rotate and selection are undoable, one step per gestu
   assert.ok(Math.abs((await el(page)).cam.x - cam1.x) < 0.5, 'redo pan');
 });
 
-await scenario('keyboard only: arrows walk the diagram, N adds after, Ctrl+Enter chains, Delete + toolbar Undo', async (page) => {
+await scenario('keyboard only: arrows walk the diagram, N adds after, Ctrl+Enter saves, ↵ then N chains, Delete + toolbar Undo', async (page) => {
   await page.focus('lode-flow');
   await page.keyboard.press('Tab');
   await E(page, () => document.querySelector('lode-flow').shadowRoot.querySelector('.vp').focus());
@@ -283,7 +283,15 @@ await scenario('keyboard only: arrows walk the diagram, N adds after, Ctrl+Enter
   await page.keyboard.press('n');
   await settle(page, 300);
   await page.keyboard.type('First consequence');
+  // Ctrl+Enter (⌘↵) saves as ↵ does and adds nothing (2026-10-24: ⌘↵ is reserved for toggling a
+  // block control in tools that embed theditor); ↵ then N adds the next node.
   await page.keyboard.press('Control+Enter');
+  await settle(page, 300);
+  s = await el(page);
+  assert.equal(s.doc.nodes.length, before + 1, 'Ctrl+Enter saved and added no node');
+  assert.equal(s.doc.nodes.at(-1).text, 'First consequence');
+  assert.equal(await E(page, () => !!document.querySelector('lode-flow').editing), false, 'and left Edit mode');
+  await page.keyboard.press('n');
   await settle(page, 300);
   await page.keyboard.type('Second consequence');
   await page.keyboard.press('Enter');
@@ -368,7 +376,8 @@ await scenario('Leaving Edit mode with Esc or a click on the canvas keeps the wo
   await page.keyboard.press('Enter');
   await settle(page, 300);
   assert.equal(await shadowActive(page), 'TEXTAREA.ed');
-  await page.keyboard.press('ControlOrMeta+a');
+  // Edit mode opens with the whole text selected, so typing replaces the words.
+  assert.deepEqual(await sr(() => { const ta = document.querySelector('lode-flow').editing.editor.el; return [ta.selectionStart, ta.selectionEnd === ta.value.length && ta.value.length > 0]; }), [0, true], 'the whole text is selected on entry');
   await page.keyboard.type('Trust erodes');
   await page.keyboard.press('Escape');
   await settle(page, 500);
@@ -526,6 +535,7 @@ await scenario('every other way out of Edit mode keeps the words, the selection 
   await focusOn(['trust']);
   await page.keyboard.press('Enter');
   await settle(page, 300);
+  await page.keyboard.press('End'); // Edit mode opens with the words selected: step to their end
   await page.keyboard.type(' x');
   chev = await center(page, '.glabel[data-gid="delivery"] .chev');
   await page.mouse.click(chev.x, chev.y);
@@ -538,6 +548,7 @@ await scenario('every other way out of Edit mode keeps the words, the selection 
   await focusOn(['trust']);
   await page.keyboard.press('Enter');
   await settle(page, 300);
+  await page.keyboard.press('End');
   await page.keyboard.type('y');
   const pill = await sr(() => { const r = document.querySelector('lode-flow').shadowRoot.querySelector('.puck').getBoundingClientRect(); return { x: r.left + 2, y: r.top + r.height / 2 }; });
   await page.mouse.click(pill.x, pill.y);
@@ -553,6 +564,7 @@ await scenario('touch: a tap on the bare canvas ends Edit mode and keeps the ite
   await E(page, () => { const f = document.querySelector('lode-flow'); f.select(['trust']); f.shadowRoot.querySelector('.vp').focus(); });
   await page.keyboard.press('Enter');
   await settle(page, 300);
+  await page.keyboard.press('End');
   await page.keyboard.type(' now');
   const p = await bareSpot(page);
   await page.touchscreen.tap(p.x, p.y);
@@ -1904,12 +1916,12 @@ for (const target of ['a', 'g', 'g-proxy', 'g-nested', 'edge']) await scenario(`
   await settle(page, 500);
   const pending = await E(page, (target) => {
     const f = document.querySelector('lode-flow');
-    return { text: f.editing?.ta.value, saved: target === 'a' ? f.doc.nodes[0].text : target.startsWith('g') ? f.doc.groups[0].text : f.doc.edges[0].label, kinds: f.hist.entries.map((e) => e.kind) };
+    return { text: f.editing?.editor.el.value, saved: target === 'a' ? f.doc.nodes[0].text : target.startsWith('g') ? f.doc.groups[0].text : f.doc.edges[0].label, kinds: f.hist.entries.map((e) => e.kind) };
   }, target);
   assert.deepEqual(pending, { text: 'Pending text', saved: 'Original', kinds: ['select', 'collapse'] }, 'folding leaves the pending editor intact');
   await E(page, (collapsed) => document.querySelector('lode-flow').setAllGroupsCollapsed(collapsed), target === 'g-proxy');
   await settle(page, 500);
-  await E(page, () => document.querySelector('lode-flow').editing.ta.focus());
+  await E(page, () => document.querySelector('lode-flow').editing.editor.el.focus());
   await page.keyboard.press('Enter');
   await settle(page, 500);
   const doc = (await el(page)).doc;
@@ -1930,9 +1942,9 @@ for (const collapsed of [false, true]) await scenario(`single-group ${collapsed 
     await settle(page, 500);
     assert.deepEqual(await E(page, () => {
       const f = document.querySelector('lode-flow');
-      return { draft: f.editing?.ta.value, text: f.doc.groups[0].text, kinds: f.hist.entries.map((e) => e.kind) };
+      return { draft: f.editing?.editor.el.value, text: f.doc.groups[0].text, kinds: f.hist.entries.map((e) => e.kind) };
     }), { draft: 'Pending title', text: 'Original', kinds: ['select', 'collapse'] });
-    await E(page, () => document.querySelector('lode-flow').editing.ta.focus());
+    await E(page, () => document.querySelector('lode-flow').editing.editor.el.focus());
     await page.keyboard.press('Enter');
     await settle(page, 300);
     assert.equal((await el(page)).doc.groups[0].text, 'Pending title');
@@ -2128,7 +2140,7 @@ await scenario('storage-key: a full browser store keeps the document, trims the 
       const f = document.querySelector('lode-flow');
       f.select([f.doc.nodes[i % f.doc.nodes.length].id]);
       f.addLinked(f.selection[0], 'after');
-      f.editing.ta.value = 'Node number ' + i;
+      f.editing.editor.el.value = 'Node number ' + i;
       f.finishEdit(true);
     }, i);
   }
@@ -2140,7 +2152,7 @@ await scenario('storage-key: a full browser store keeps the document, trims the 
   await E(page, () => {
     const f = document.querySelector('lode-flow');
     f.addLinked(f.doc.nodes[0].id, 'after');
-    f.editing.ta.value = 'One more';
+    f.editing.editor.el.value = 'One more';
     f.finishEdit(true);
   });
   await settle(page, 700);

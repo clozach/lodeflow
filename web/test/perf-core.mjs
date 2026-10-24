@@ -97,7 +97,7 @@ export const OPS = {
     label: 'Type one character in a node',
     prepare: (f) => f.startEdit(middle(f)),
     run: (f) => {
-      const ta = f.editing?.ta;
+      const ta = f.editing?.editor.el;
       if (!ta) return;
       ta.value += ' x';
       ta.dispatchEvent(new Event('input'));

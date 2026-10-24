@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>lodeflow — thumb layouts</title>
+  <style>
+    :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; --muted: #6f6a61; --line: rgb(31 28 24 / .14); }
+    @media (prefers-color-scheme: dark) { :root { --muted: #a19b90; --line: rgb(255 255 255 / .14); } }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: Canvas; color: CanvasText; }
+    main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 40px; }
+    h1 { margin: 0 0 4px; font-size: 20px; letter-spacing: -.01em; }
+    main > p { margin: 0 0 20px; color: var(--muted); font-size: 14px; }
+    section { margin: 0 0 28px; }
+    h2 { margin: 0; font-size: 15px; font-weight: 650; }
+    .measured { margin: 2px 0 8px; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; min-height: 1.4em; }
+    .frame { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; height: 220px; }
+    lode-flow { height: 100%; }
+  </style>
+  <!-- Classic scripts, core first: the page opens from disk (file://) as well as from a server. -->
+  <script src="../web/dist/lode-flow.iife.js"></script>
+  <script src="../web/dist/theditor.iife.js"></script>
+</head>
+<body>
+<main>
+  <h1>Thumb layouts</h1>
+  <p>The same words and pictures in each diagram, at actual size.</p>
+  <section>
+    <h2 title="Each picture is a third of the node's row, the default since 2026-10-23: 45 px wide in a 176 px node.">Today: a third of the node</h2>
+    <div class="measured" data-for="third"></div>
+    <div class="frame"><lode-flow id="third" fit-min="1"></lode-flow></div>
+  </section>
+  <section>
+    <h2 title="--lf-thumb-min: 96px on the diagram, and node-width raised to 330 px so three 96 px pictures still share a row. In a narrower node the floor wraps the third picture.">96 px floor, the node widens</h2>
+    <div class="measured" data-for="floor"></div>
+    <div class="frame"><lode-flow id="floor" fit-min="1" node-width="330" style="--lf-thumb-min: 96px"></lode-flow></div>
+  </section>
+  <section>
+    <h2 title="--lf-thumb-cols: 1 on the diagram: each picture takes the node's whole text width, one under the other.">One picture per row</h2>
+    <div class="measured" data-for="row"></div>
+    <div class="frame"><lode-flow id="row" fit-min="1" style="--lf-thumb-cols: 1"></lode-flow></div>
+  </section>
+</main>
+<script>
+  // Four pictures drawn here, so the page needs no files: wide, tall, square and very wide.
+  function picture(w, h, draw) {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    draw(c.getContext('2d'), w, h);
+    const webp = c.toDataURL('image/webp', 0.86);
+    return webp.startsWith('data:image/webp') ? webp : c.toDataURL('image/png');
+  }
+  const linear = (x, w, h, stops, vertical = true) => {
+    const g = vertical ? x.createLinearGradient(0, 0, 0, h) : x.createLinearGradient(0, 0, w, 0);
+    stops.forEach((s, i) => g.addColorStop(i / (stops.length - 1), s));
+    return g;
+  };
+  const pictures = [
+    picture(480, 320, (x, w, h) => { // dawn
+      x.fillStyle = linear(x, w, h, ['#f7b267', '#f4845f', '#c0587e']); x.fillRect(0, 0, w, h);
+      x.fillStyle = '#fff3c4'; x.beginPath(); x.arc(w * .68, h * .62, h * .2, 0, Math.PI * 2); x.fill();
+      x.fillStyle = '#3d2c4a'; x.fillRect(0, h * .78, w, h * .22);
+    }),
+    picture(320, 480, (x, w, h) => { // tower
+      x.fillStyle = linear(x, w, h, ['#9ad1f5', '#3a7bd5']); x.fillRect(0, 0, w, h);
+      x.fillStyle = '#1f2a44'; x.fillRect(w * .4, h * .18, w * .2, h * .82);
+      x.fillRect(w * .32, h * .3, w * .36, h * .05);
+    }),
+    picture(400, 400, (x, w, h) => { // leaf
+      const g = x.createRadialGradient(w * .45, h * .4, 10, w / 2, h / 2, w * .7);
+      g.addColorStop(0, '#c7e9a3'); g.addColorStop(1, '#2f7a4f');
+      x.fillStyle = g; x.fillRect(0, 0, w, h);
+      x.strokeStyle = '#f2f9e8'; x.lineWidth = 10; x.beginPath(); x.moveTo(w * .2, h * .8); x.quadraticCurveTo(w * .5, h * .5, w * .82, h * .18); x.stroke();
+    }),
+    picture(560, 315, (x, w, h) => { // sea
+      x.fillStyle = linear(x, w, h, ['#cdeef0', '#2a9d8f', '#1d5c63']); x.fillRect(0, 0, w, h);
+      x.strokeStyle = 'rgb(255 255 255 / .75)'; x.lineWidth = 6;
+      for (const y of [.55, .7, .85]) { x.beginPath(); for (let i = 0; i <= w; i += 8) x.lineTo(i, h * y + Math.sin(i / 28) * 7); x.stroke(); }
+    }),
+  ];
+  const text = (t) => ({ type: 'text', text: t });
+  const doc = {
+    settings: { orientation: 'lr' },
+    nodes: [
+      { id: 'shoot', text: '', content: { type: 'doc', content: [
+        { type: 'paragraph', content: [text('Four photos from Saturday’s shoot, in the order they were taken.')] },
+        { type: 'paragraph', content: pictures.map((src) => ({ type: 'image', attrs: { src } })) },
+      ] } },
+      { id: 'pick', text: 'Pick two for the poster' },
+    ],
+    edges: [{ id: 'e1', from: 'shoot', to: 'pick' }],
+  };
+  // Sizes as laid out, before any transform (offsetWidth), measured again as each picture loads.
+  function measure(flow) {
+    const out = document.querySelector(`.measured[data-for="${flow.id}"]`);
+    const node = flow.shadowRoot.querySelector('.node[data-id="shoot"]');
+    const thumbs = [...flow.shadowRoot.querySelectorAll('.node[data-id="shoot"] .kk-fm-image')];
+    if (!node || !thumbs.length) return;
+    const rows = new Set(thumbs.map((t) => t.offsetTop)).size;
+    const widths = [...new Set(thumbs.map((t) => t.offsetWidth))].join(', ');
+    out.textContent = `Thumbs ${widths} px · node ${node.offsetWidth} px · ${rows} ${rows === 1 ? 'row' : 'rows'}`;
+  }
+  for (const flow of document.querySelectorAll('lode-flow')) {
+    const frame = flow.parentElement;
+    flow.addEventListener('lode-layout', () => {
+      const info = flow.layoutInfo;
+      // Room above the diagram for its toolbar, which sits at the top of the frame; the diagram stays centred.
+      if (info) frame.style.height = `${Math.ceil(info.height + 120)}px`;
+      measure(flow);
+    });
+    flow.shadowRoot?.addEventListener('load', () => measure(flow), true);
+    flow.setDoc(structuredClone(doc));
+  }
+</script>
+</body>
+</html>

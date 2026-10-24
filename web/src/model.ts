@@ -1,4 +1,7 @@
 // Document model: plain JSON, updated immutably so history snapshots cost nothing.
+import { formattedIsPlain, formattedText, parseFormattedDoc, type FormattedDoc } from './theditor/vendor/formatted-message';
+
+export type { FormattedDoc } from './theditor/vendor/formatted-message';
 
 export type Orientation = 'auto' | 'lr' | 'rl' | 'tb' | 'bt' | 'in-out' | 'out-in';
 export type Bias = 'start' | 'end';
@@ -6,9 +9,16 @@ export type Compactness = 'relaxed' | 'comfortable' | 'compact';
 
 export interface FlowNode {
   id: string;
+  /** The node's words. With `content`, derived from it (Markdown-style: `**bold**`, `- item`, `![alt]`). */
   text: string;
   /** Id of the group this node belongs to. */
   group?: string | null;
+  /**
+   * Formatted text (a formatted message document), present only when the words alone cannot hold
+   * the formatting. Shown when theditor (`lodeflow/theditor`) is loaded; without it the
+   * node shows `text`.
+   */
+  content?: FormattedDoc;
 }
 
 export interface FlowEdge {
@@ -149,7 +159,7 @@ export function normalizeDoc(raw: unknown, fallback: Partial<FlowSettings> = {})
     const node: FlowNode = { id: fresh(n?.id, 'n'), text: str(n?.text ?? n?.label ?? n?.title) };
     const g = n?.group == null ? null : str(n.group);
     if (g && gids.has(g)) node.group = g;
-    return node;
+    return n?.content === undefined ? node : withContent(node, n.content);
   });
   const nids = new Set(nodes.map((n) => n.id));
   const junctionsIn: any[] = Array.isArray(r.junctions) ? r.junctions : [];
@@ -616,8 +626,45 @@ export function addLinkedTo(doc: FlowDoc, anchors: string[], dir: 'after' | 'bef
   return { doc: { ...d1, edges: [...d1.edges, ...edges] }, id };
 }
 
+/**
+ * A node with its formatted content: kept only when it is a document the formatted message model
+ * accepts and holds something plain text cannot; its words are then derived from it.
+ */
+function withContent(node: FlowNode, content: unknown): FlowNode {
+  const { content: _old, ...plain } = node;
+  let doc: FormattedDoc | null = null;
+  try { doc = parseFormattedDoc(content); } catch { doc = null; }
+  if (!doc || formattedIsPlain(doc)) return plain;
+  return { ...plain, text: formattedText(doc), content: doc };
+}
+
+/** Plain words for a node. Changed words drop its formatted content; the same words keep it. */
 export function setNodeText(doc: FlowDoc, id: string, text: string): FlowDoc {
-  return { ...doc, nodes: doc.nodes.map((n) => (n.id === id ? { ...n, text } : n)) };
+  return {
+    ...doc,
+    nodes: doc.nodes.map((n) => {
+      if (n.id !== id) return n;
+      if (n.text === text) return n;
+      const { content: _content, ...plain } = n;
+      return { ...plain, text };
+    }),
+  };
+}
+
+/**
+ * A node's words and, optionally, formatted content (what a formatted editor hands back). Valid
+ * content that holds formatting is kept and the words derived from it; otherwise the node keeps
+ * `text` alone.
+ */
+export function setNodeContent(doc: FlowDoc, id: string, value: { text: string; content?: unknown }): FlowDoc {
+  return {
+    ...doc,
+    nodes: doc.nodes.map((n) => {
+      if (n.id !== id) return n;
+      const { content: _content, ...plain } = n;
+      return value.content === undefined ? { ...plain, text: value.text } : withContent({ ...plain, text: value.text }, value.content);
+    }),
+  };
 }
 
 export function setGroupText(doc: FlowDoc, id: string, text: string): FlowDoc {

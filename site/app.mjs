@@ -176,6 +176,7 @@ notice(checked.message);
 bindFlow(flow);
 try {
   await import('./assets/lode-flow.js');
+  await import('./assets/theditor.js'); // nodes take formatted text (theditor), after the core
   await customElements.whenDefined('lode-flow');
   if (checked.invalid) flow.setDoc(cloneSeed());
   let stored = null;

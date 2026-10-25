@@ -97,6 +97,7 @@ export const IMAGE_CSS = `
     overflow-wrap: anywhere;
 }
 .kk-fm-caption-input {
+    min-height: 0;
     resize: none;
     overflow: hidden;
     height: 100%;

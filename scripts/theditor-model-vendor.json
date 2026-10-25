@@ -16,7 +16,7 @@
     },
     "image-css.ts": {
       "canonical": "apps/web/components/feedback/formatting/image-css.ts",
-      "sha256": "3fc5e7069db727f49eec2af1959cf6a616bc5a2afd6a701b013337cf21b6a597"
+      "sha256": "cb59fe1e136c0309af7f6c5537ceb16857710354e8bb9a31afb2eeee0310fb9c"
     },
     "design-measurements.ts": {
       "canonical": "packages/common-models/src/design-measurements.ts",

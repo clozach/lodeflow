@@ -75,8 +75,13 @@ export const imageCaptionView =
       const current = editor.state.doc.nodeAt(pos);
       if (current?.type !== node.type || current.attrs.alt === input.value)
         return;
+      // A mapped leaf replacement lets history group adjacent caption
+      // typing. AttrStep has an empty map and splits every character.
       editor.view.dispatch(
-        editor.state.tr.setNodeAttribute(pos, "alt", input.value),
+        editor.state.tr.setNodeMarkup(pos, undefined, {
+          ...current.attrs,
+          alt: input.value,
+        }),
       );
     };
     const leave = () => {

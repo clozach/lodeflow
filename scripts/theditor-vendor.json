@@ -1,0 +1,43 @@
+{
+  "source": "047b440f14c9d7b3db2d3dd5cfbdf53eb1d5e5b698848e20b9f67725902ed9e3",
+  "folders": [
+    "web/src/theditor/vendor/theditor/core",
+    "web/src/theditor/vendor/theditor/vanilla",
+    "web/src/theditor/vendor/field-core"
+  ],
+  "files": {
+    "scripts/check-theditor-vendor.mjs": "022794e663148bddc01f4ed7ca05a68c0c6c22d6a89aaebb8ecd32fd9a3e392f",
+    "web/src/theditor/vendor/field-core/field-core.d.mts": "533b6ba747451a309227f601d77c7d283ff2852c032288dce5ed1a210a16f739",
+    "web/src/theditor/vendor/field-core/field-core.d.ts": "3f11b27336f0cae7b496422e69c2fa24b756a0df85bbf8d3fa1bc7c0709d8c0d",
+    "web/src/theditor/vendor/field-core/field-core.js": "c1bae94b4e13c8c12c164ae2bca45ac7580cbe33f5958b60700e77f357d16c18",
+    "web/src/theditor/vendor/field-core/field-core.mjs": "fe2e55479e23f4b920f7d57a2102eff8178450bf0dfebc31fb21fde9337b66c9",
+    "web/src/theditor/vendor/field-core/icons.js": "cf5feaaed9c0fe7705b6d05a545687ed589287e4fb9d113757fa50836b87490f",
+    "web/src/theditor/vendor/theditor/chrome-css.ts": "a350d6d86fc5f9a37192ab34d4a3ba98a5151a77a2afe4c3182c0214d711007e",
+    "web/src/theditor/vendor/theditor/core/actions.ts": "9cbfcb1d306fa1be1c9f43906d5da47938b67c03b6ee7ae525b4c96ff606bc38",
+    "web/src/theditor/vendor/theditor/core/chords.ts": "e5468cbb85a580d503fa55b646755735e32a28b11d961b04e34151bb434efbcc",
+    "web/src/theditor/vendor/theditor/core/copy.ts": "5173c26421e383adc0cbc1d40061e8d7a770f52858ca6b9043e04f13c3ca282b",
+    "web/src/theditor/vendor/theditor/core/dismiss.ts": "605ea05ce8b741734a66af1e50717c993df0329199411f9205f10b68adec1bad",
+    "web/src/theditor/vendor/theditor/core/fixed-layer.ts": "2f47a0e83c667897b7b844b25c762054476f8714fb7922d552ddb232319fda34",
+    "web/src/theditor/vendor/theditor/core/icons.ts": "186a8795a4c2ff6f42e5b269e41c01769dadb51e4adc4ffff7f18f42a30da835",
+    "web/src/theditor/vendor/theditor/core/image-tools.ts": "fb48ecc2cef7bcb9a6f430236857f8cd14a112b8b3601a17fec2d6365c69d1bf",
+    "web/src/theditor/vendor/theditor/core/image-tweaks.ts": "f5528e796bb5c9271be4c249f12c44c0e57530549d83e521ef2b57d29614d69d",
+    "web/src/theditor/vendor/theditor/core/index.ts": "27cce4e491e6e19d7c090c715aa4b939c2c1e40adef1e4173c98aa5a4970ced7",
+    "web/src/theditor/vendor/theditor/core/keys.ts": "14a1350bfeaa1a8ed954108b81f3b2860ce91b8dbca040670cd4885a4e240960",
+    "web/src/theditor/vendor/theditor/core/link.ts": "e1f2ade13a9e43e5b421ef157b4daa60a4beccc2e5b7890337a2a4e2876196a0",
+    "web/src/theditor/vendor/theditor/core/lozenge-layout.ts": "1b2d2f2ce0c2bb306cc18c743c3aaaaf59f7e8056c5fa4cae7bf66a6e18f2138",
+    "web/src/theditor/vendor/theditor/core/lozenge-placement.ts": "abd7c5fe7c927fa746bcdcf7e47db7b630e10c35c0674d92525ed3e4e0465a7b",
+    "web/src/theditor/vendor/theditor/core/plain-text.ts": "2308fafc0552f1f3d7843c70c1e0fb09e62c8fee9a3bd0ea72e5723931eb2014",
+    "web/src/theditor/vendor/theditor/core/search-text.ts": "263364f4bca1195616117141889ae43263f5ec8c2aca61c5c2b3507c46dbe80b",
+    "web/src/theditor/vendor/theditor/core/toolbar.ts": "31cc230c37433d6a1410057f72ff03e4db21ad5a342281bb3ece53c2ded62ba4",
+    "web/src/theditor/vendor/theditor/icons.ts": "b728bdad0556db82c5a5ca054681b2f9d695d4d2e32a1134286e4cb1e80a939a",
+    "web/src/theditor/vendor/theditor/vanilla/bloom-tuner.ts": "2a51e71c84ffe7b979d8c079ecddcf678f9a0a27df85c769751fcae1bfb155e4",
+    "web/src/theditor/vendor/theditor/vanilla/dom.ts": "8aedc24ebda9d3a24be275998fa289797a37f2c99b325cca84d83afe07155978",
+    "web/src/theditor/vendor/theditor/vanilla/host-css.ts": "07e8d8dce8db05482161ced8fc8670178c9db004387b6c92b0792d1c2b1880f7",
+    "web/src/theditor/vendor/theditor/vanilla/image-tools.ts": "ba832fd163b7ae5af545a51837a4257514ca3faacaf73d7654572d01c13cd335",
+    "web/src/theditor/vendor/theditor/vanilla/index.ts": "323cf3fe8842ef2322745a189fa2b1a88dc05674c0db14ed453b48fbea5095a8",
+    "web/src/theditor/vendor/theditor/vanilla/kitchen-sink.ts": "d4be1ead7bfca143e9a38eec19846e6a1ba9933e3802ab2a5d60d950f9549aa6",
+    "web/src/theditor/vendor/theditor/vanilla/link-step.ts": "704a19bbcb4f76d3dccf3cc81077e8a87e386ccad9cdeccb15ab0b517bc35f7a",
+    "web/src/theditor/vendor/theditor/vanilla/lozenge.ts": "d34aa45493a3a932c4e06087ef49f06b32f0958322fc09608bdfdbae746557c7",
+    "web/src/theditor/vendor/theditor/vanilla/toolbar.ts": "591e23ccb7d36646fde70871defdfe7fbdacc603adb33022b28c4a0673f3378a"
+  }
+}

@@ -328,3 +328,9 @@ Every edit stays within 50 ms up to about 550 nodes (interpolated between 400 an
 To find the limit on another machine, build the stress page (`node scripts/build-stress.mjs stress.html [--label <legend text>] [--column <table header>] [reference.json …]`, after `pnpm build`; the reference files are drawn as dashed lines, for example a previous build's timings), open it, pick a budget per edit and run it; it also loads ten awkward shapes (hubs, a 15 × 15 everything-to-everything, deep nesting, long labels, radial). From the command line, `node test/perf.mjs` in `web/` prints the same table (`--family`, `--sizes`, `--orientation`, `--ops`, `--stop`, `--out`); it uses `test/gen.mjs` (seeded diagram generator) and `test/perf-core.mjs` (the timing loop the page shares).
 
 The bundle is ~460 kB minified, of which ~335 kB is the base64 engine (the `.wasm` itself is ~250 kB). The engine alone can be timed in Node with `esbuild --bundle --platform=node --format=esm test/bench.ts --outfile=/tmp/bench.mjs && node /tmp/bench.mjs` in `web/`.
+
+### Shared theditor magnets
+
+The optional `lodeflow/theditor` entry supplies the formatting toolbar and a selected picture’s Style, Alignment and Tweak magnets. Tab enters the tools; arrows move between choices. `⌃⌥⌘T` opens Tweak for a selected picture and Toggle for words. `⌘↵` still toggles a checkbox or collapsible.
+
+The chrome is derived from theditor’s shared source, also consumed by the React composer. `scripts/check-theditor-vendor.mjs` verifies every generated file against its source receipt before build and tests. Refresh copies with the canonical theditor generator; editing a derived file fails this check. The existing document-model sync remains `scripts/sync-theditor.mjs --from <swamikk-checkout>`.

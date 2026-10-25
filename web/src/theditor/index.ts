@@ -5,8 +5,10 @@ import { LodeFlowElement } from '../index';
 import type { NodeEditorKit } from '../node-editor';
 import { theditor, imageData, IMAGE_MAX_SIDE } from './editor';
 import { formattedSchema, renderFormatted } from './render';
-import { THEDITOR_CSS } from './styles';
+import { MAGNETS_CSS, THEDITOR_CSS } from './styles';
 import { IMAGE_CSS } from './vendor/image-css';
+import { CHROME_CSS } from './vendor/theditor/chrome-css';
+import { FIELD_CSS, HOST_CSS } from './vendor/theditor/vanilla/index';
 
 const MOD = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '') ? '⌘' : 'Ctrl+';
 
@@ -27,13 +29,15 @@ export const THEDITOR_HELP: [string, string][] = [
   ['⇧↵', 'New paragraph or list item (↵ saves)'],
   [`${MOD}↵`, 'Tick or untick a to-do, open or close a toggle'],
   ['Paste or drop an image', 'Adds it in the line as a thumb, a third of the node’s width; three fit side by side'],
+  ['Tab', 'The formatting magnets above the node (← → between them; Tab again a selected picture’s magnets)'],
+  ['⌃⌥⌘S · ⌃⌥⌘L · ⌃⌥⌘T', 'A selected picture’s Style, Alignment and Tweak (⌃⌥⌘T makes a toggle otherwise)'],
 ];
 
 /** The kit `LodeFlowElement.registerNodeEditor` takes: editor, node drawing, styles and Help rows. */
 export const theditorKit: NodeEditorKit = {
   create: theditor,
   render: renderFormatted,
-  css: IMAGE_CSS + THEDITOR_CSS,
+  css: IMAGE_CSS + THEDITOR_CSS + CHROME_CSS + FIELD_CSS + HOST_CSS + MAGNETS_CSS,
   help: THEDITOR_HELP,
 };
 

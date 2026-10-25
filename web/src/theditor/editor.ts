@@ -1,6 +1,8 @@
 // theditor in a node: the Tiptap core of theditor (swamikk's formatted message editor), with
 // lodeflow's Edit-mode keys (↵ saves, ⇧↵ a new paragraph or list item, Esc saves), ⌘↵ for
-// theditor's toggle block control, and images pasted or dropped in as inline thumbs.
+// theditor's toggle block control, images pasted, dropped or picked in as inline thumbs, and
+// theditor's magnets (its formatting toolbar and a picture's Style, Alignment and Tweak) from the
+// shared vanilla renderer, the same source the swamikk composer's React magnets read.
 import { Editor, Extension } from '@tiptap/core';
 import { Plugin } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
@@ -8,6 +10,8 @@ import type { NodeEditorFactory } from '../node-editor';
 import { docFromEditor, docFromWording, wordingFromDoc } from './vendor/doc';
 import { formattedExtensions } from './vendor/extensions';
 import { isFormattedImageSrc } from './vendor/formatted-message';
+import { mountMagnets, type Magnets } from './vendor/theditor/vanilla/index';
+import { ICON_URLS } from './vendor/theditor/icons';
 
 /** Longest side of an inline image, in pixels, after a paste or drop. */
 export const IMAGE_MAX_SIDE = 1024;
@@ -63,9 +67,9 @@ export async function imageData(file: Blob, maxSide = IMAGE_MAX_SIDE): Promise<s
   }
 }
 
-/** Paste or drop image files: each becomes an inline image at the caret (or where it was dropped). */
-function imageInput(editor: () => Editor | null) {
-  const insert = async (files: File[], at: number | null) => {
+/** Each image file becomes an inline image at the caret (or at `at`, where it was dropped). */
+function imageInserter(editor: () => Editor | null) {
+  return async (files: File[], at: number | null) => {
     for (const file of files) {
       const src = await imageData(file);
       const live = editor();
@@ -78,6 +82,10 @@ function imageInput(editor: () => Editor | null) {
       }
     }
   };
+}
+
+/** Paste or drop image files: each becomes an inline image at the caret (or where it was dropped). */
+function imageInput(insert: ReturnType<typeof imageInserter>) {
   return Extension.create({
     name: 'lodeflowImageInput',
     addProseMirrorPlugins: () => [
@@ -104,13 +112,40 @@ function imageInput(editor: () => Editor | null) {
   });
 }
 
+/** The diagram is drawn dark (its theme, or the system's when it follows it): the magnets follow. */
+function drawnDark(host: HTMLElement): boolean {
+  const flow = (host.getRootNode() as ShadowRoot).host as HTMLElement | undefined;
+  const theme = flow?.getAttribute('theme');
+  if (theme === 'dark' || theme === 'blueprint') return true;
+  if (theme === 'light') return false;
+  return !!globalThis.matchMedia?.('(prefers-color-scheme: dark)').matches;
+}
+
+/** A file picker for the Image magnet (⌃⌥⌘I): every chosen picture lands at the caret. */
+function imagePicker(parent: HTMLElement, insert: ReturnType<typeof imageInserter>) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.multiple = true;
+  input.hidden = true;
+  input.addEventListener('change', () => {
+    const files = [...(input.files ?? [])].filter((f) => f.type.startsWith('image/'));
+    input.value = '';
+    void insert(files, null);
+  });
+  parent.append(input);
+  return () => input.click();
+}
+
 export const theditor: NodeEditorFactory = ({ host, initial, placeholder, label, hooks }) => {
   const el = document.createElement('div');
   el.className = 'fm-ed';
   el.dataset.ph = placeholder;
   host.append(el);
   let editor: Editor | null = null;
+  let magnets: Magnets | null = null;
   let passThrough = false;
+  const insert = imageInserter(() => editor);
   // fm-empty, not empty: the diagram's own .empty is its empty-canvas hint (absolute, centred, padded),
   // which squeezed an empty node's editor to no width at all.
   const syncEmpty = () => el.classList.toggle('fm-empty', !!editor?.isEmpty);
@@ -118,7 +153,7 @@ export const theditor: NodeEditorFactory = ({ host, initial, placeholder, label,
     element: el,
     // The base stylesheet goes into the diagram's shadow root (styles.ts), not the page's head.
     injectCSS: false,
-    extensions: [...formattedExtensions(), imageInput(() => editor)],
+    extensions: [...formattedExtensions(), imageInput(insert)],
     content: docFromWording(initial.text, initial.content ? { kind: 'formatted', doc: initial.content } : undefined),
     editorProps: {
       attributes: { class: 'fm', role: 'textbox', 'aria-multiline': 'true', 'aria-label': label, spellcheck: 'true' },
@@ -132,6 +167,8 @@ export const theditor: NodeEditorFactory = ({ host, initial, placeholder, label,
           editor?.commands.toggleBlockControl();
           return true;
         }
+        // The magnets' chords (formatting, a picture's ⌃⌥⌘S/L/T) and Tab into the toolbar.
+        if (magnets?.handleEditorKey(event)) return true;
         if (hooks.onKeydown(event)) return true;
         if (event.key === 'Enter' && event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
           // ↵ saves, so ⇧↵ does what ↵ does in the editor: a new paragraph, list item or code line.
@@ -151,10 +188,28 @@ export const theditor: NodeEditorFactory = ({ host, initial, placeholder, label,
       syncEmpty();
       hooks.onInput();
     },
-    onBlur: () => hooks.onBlur(),
+    // Focus moving into a magnet keeps Edit mode open; leaving words and magnets ends it.
+    onBlur: ({ event }) => {
+      if (!magnets?.contains(event.relatedTarget as Node | null)) hooks.onBlur();
+    },
   });
   syncEmpty();
   const live = editor;
+  const layer = host.getRootNode() as ShadowRoot | Document;
+  let pick: (() => void) | null = null;
+  magnets = mountMagnets({
+    editor: live,
+    layer: layer instanceof Document ? layer.body : layer,
+    // Floated above the node's painted box, not its text box.
+    anchor: () => (host.closest('.node') as HTMLElement | null) ?? host,
+    // The diagram's own floating magnets (its puck, say) keep their place; the toolbar keeps clear.
+    avoid: () => [...(layer as ParentNode).querySelectorAll<HTMLElement>('.ui.magnet')].filter((m) => !m.hidden && m.offsetParent).map((m) => m.getBoundingClientRect()),
+    skin: { iconUrl: (name) => ICON_URLS[name] ?? '' },
+    pickImage: () => pick?.(),
+    dark: () => drawnDark(host),
+    onLeave: () => hooks.onBlur(),
+  });
+  pick = imagePicker(magnets.root, insert);
   return {
     el,
     focus: () => live.view.focus(),
@@ -165,7 +220,11 @@ export const theditor: NodeEditorFactory = ({ host, initial, placeholder, label,
       const wording = wordingFromDoc(docFromEditor(live.getJSON()));
       return { text: wording.text, content: wording.content?.doc };
     },
-    hasFocus: () => !live.isDestroyed && live.view.hasFocus(),
-    destroy: () => live.destroy(),
+    // The keyboard in a magnet is still editing this node.
+    hasFocus: () => !live.isDestroyed && (live.view.hasFocus() || !!magnets?.contains((layer as ShadowRoot | Document).activeElement)),
+    destroy: () => {
+      magnets?.destroy();
+      live.destroy();
+    },
   };
 };

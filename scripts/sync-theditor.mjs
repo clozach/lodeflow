@@ -8,7 +8,7 @@
 // landed a change lodeflow needs. --check accepts it only while the canonical file is still exactly the
 // one it went ahead of; the moment that file changes (or appears), the check fails so someone reconciles.
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -33,6 +33,11 @@ const FILES = [
   { local: 'extensions.ts', canonical: 'apps/web/components/feedback/formatting/extensions.ts' },
   { local: 'doc.ts', canonical: 'apps/web/components/feedback/formatting/doc.ts' },
   { local: 'image-css.ts', canonical: 'apps/web/components/feedback/formatting/image-css.ts' },
+  // The design roles the magnets measure by (MAGNET_GAP, CONTROL_SIZE_TOUCH): theditor's chrome core reads them.
+  { local: 'design-measurements.ts', canonical: 'packages/common-models/src/design-measurements.ts' },
+  // The pointer's grace on its way from a picture's magnet to its open lozenge (the image magnets read it).
+  { local: 'hover-grace/policy.ts', canonical: 'apps/web/lib/hover-grace/policy.ts' },
+  { local: 'hover-grace/controller.ts', canonical: 'apps/web/lib/hover-grace/controller.ts' },
 ];
 /**
  * Copies that run ahead of canonical, by local file name: { canonical: <SHA-256 of the canonical file
@@ -95,6 +100,7 @@ for (const file of FILES) {
     console.log(`✓ ${file.local}: already current`);
     continue;
   }
+  mkdirSync(dirname(to), {recursive:true});
   writeFileSync(to, want);
   console.log(`→ ${file.local}: copied from ${file.canonical}${ahead ? ' (it was ahead of canonical: remove it from AHEAD once the change is confirmed there)' : ''}`);
 }

@@ -80,3 +80,10 @@ img.ProseMirror-separator { display: inline !important; border: none !important;
 li.ProseMirror-selectednode { outline: none; }
 @media (prefers-reduced-motion: reduce) { .ProseMirror-gapcursor::after { animation: none; } }
 `;
+
+/** theditor's magnets in a diagram: the shared stylesheets' colour roles from the diagram's theme. */
+export const MAGNETS_CSS = /* css */ `
+.kk-theditor { --theditor-accent: var(--lf-accent); --theditor-font: var(--lf-ui-font); }
+.kk-theditor.dark { --theditor-popover: 225 10% 15%; --theditor-popover-foreground: 40 20% 90%; --theditor-border: 225 9% 26%; --theditor-muted-foreground: 38 8% 60%; }
+:host([theme="blueprint"]) .kk-theditor { --theditor-popover: 206 77% 14%; --theditor-popover-foreground: 200 100% 97%; --theditor-border: 201 33% 56%; --theditor-muted-foreground: 203 47% 77%; }
+`;

@@ -17,7 +17,7 @@ export interface NodeEditorValue {
 export interface NodeEditorHooks {
   /** After every change to what is written (the element re-measures the item). */
   onInput(): void;
-  /** Every key first. True: the element handled it (↵, Esc) and the editor does nothing more with it. */
+  /** Every key first. True: the element handled it (⇧⌘↵, Esc) and the editor does nothing more with it. */
   onKeydown(e: KeyboardEvent): boolean;
   /** Focus left the editor. */
   onBlur(): void;
@@ -83,7 +83,7 @@ export function onNodeEditorKit(fn: () => void): () => void {
   return () => listeners.delete(fn);
 }
 
-/** The built-in editor: a textarea that grows with its words. ↵ saves, ⇧↵ is a new line. */
+/** The built-in editor: a textarea that grows with its words. Return inserts a line; ⇧⌘↵ saves. */
 export const plainEditor: NodeEditorFactory = ({ host, initial, placeholder, label, hooks }) => {
   const ta = document.createElement('textarea');
   ta.className = 'ed';

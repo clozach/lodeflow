@@ -5,15 +5,15 @@ export const progressKey = 'lodeflow-tutorial:progress:v2';
 export const seed = { nodes: [], edges: [], groups: [], junctions: [], settings: { orientation: 'auto', bias: 'start', compactness: 'comfortable', tightGroups: true, untangle: true } };
 export const levels = [
   { title: 'Connect ideas', steps: [
-    ['rename', 'Rename your node', 'Click the node again, type new words, then press Enter.', 'Tap the node again, type new words, then tap outside it.'],
-    ['linked', 'Add a linked node', 'Select a node, press N, type its words, then press Enter.', 'Select a node, tap Add node, type its words, then tap outside it.'],
-    ['free', 'Add a free node', 'Double-click empty space, type its words, then press Enter.', 'Tap empty space to deselect, tap Add node, then type its words.'],
+    ['rename', 'Rename your node', 'Click the node again, type new words, then press Shift+Command+Return (Ctrl+Shift+Enter elsewhere).', 'Tap the node again, type new words, then tap outside it.'],
+    ['linked', 'Add a linked node', 'Select a node, press N, type its words, then press Shift+Command+Return (Ctrl+Shift+Enter elsewhere).', 'Select a node, tap Add node, type its words, then tap outside it.'],
+    ['free', 'Add a free node', 'Double-click empty space, type its words, then press Shift+Command+Return (Ctrl+Shift+Enter elsewhere).', 'Tap empty space to deselect, tap Add node, then type its words.'],
     ['link', 'Connect the free node', 'Drag from the free node to another node. Or select it, press E and choose a target.', 'Select the free node, tap Link, then tap a target in the list.'],
   ] },
   { title: 'Shape the diagram', steps: [
-    ['label', 'Label an arrow', 'Click an arrow twice, type its label, then press Enter.', 'Tap an arrow twice, type its label, then tap outside it.'],
-    ['insert', 'Insert a node in an arrow', 'Select an arrow, press N, type the new node’s words, then press Enter.', 'Select an arrow, tap Insert node, type its words, then tap outside it.'],
-    ['group', 'Group two nodes', 'Click one node, Shift-click a second, press G, name the group, then press Enter.', 'Touch can select one node at a time. Tap this step to group an example pair.'],
+    ['label', 'Label an arrow', 'Click an arrow twice, type its label, then press Shift+Command+Return (Ctrl+Shift+Enter elsewhere).', 'Tap an arrow twice, type its label, then tap outside it.'],
+    ['insert', 'Insert a node in an arrow', 'Select an arrow, press N, type the new node’s words, then press Shift+Command+Return (Ctrl+Shift+Enter elsewhere).', 'Select an arrow, tap Insert node, type its words, then tap outside it.'],
+    ['group', 'Group two nodes', 'Click one node, Shift-click a second, press G, name the group, then press Shift+Command+Return (Ctrl+Shift+Enter elsewhere).', 'Touch can select one node at a time. Tap this step to group an example pair.'],
     ['collapse', 'Collapse the group', 'Select the group and press C, or click its folding arrow.', 'Tap the group’s folding arrow, or select the group and tap Collapse.'],
   ] },
   { title: 'Explore and undo', steps: [

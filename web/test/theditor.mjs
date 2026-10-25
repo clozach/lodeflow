@@ -81,7 +81,7 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
     await edit(p);
     assert.equal(await flow(p, (f) => f.shadowRoot.querySelectorAll('textarea').length), 0, 'no textarea');
     await p.keyboard.type('X');
-    await p.keyboard.press('Enter');
+    await p.keyboard.press('ControlOrMeta+Shift+Enter');
     await settle(p);
     assert.equal((await node(p, 'a')).text, 'X', 'typing replaced the whole text');
     assert.equal(await flow(p, (f) => !!f.editing), false, '↵ saved and left Edit mode');
@@ -92,7 +92,7 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
     await load(p);
     await edit(p);
     await p.keyboard.type('*bold* words');
-    await p.keyboard.press('Enter');
+    await p.keyboard.press('ControlOrMeta+Shift+Enter');
     await settle(p);
     const n = await node(p, 'a');
     assert.equal(n.text, '**bold** words', 'text is formattedText(content)');
@@ -104,21 +104,21 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
     assert.deepEqual(await node(p, 'a'), { id: 'a', text: 'First' }, 'one Undo puts the plain node back');
   });
 
-  await check(engine, name, '⇧↵ makes a new paragraph or list item; ↵ saves', '/', async (p) => {
+  await check(engine, name, '↵ makes a new paragraph or list item; ControlOrMeta+Shift+Enter saves', '/', async (p) => {
     await load(p);
     await edit(p);
     await p.keyboard.type('one');
-    await p.keyboard.press('Shift+Enter');
+    await p.keyboard.press('Enter');
     await p.keyboard.type('two');
     assert.equal(await flow(p, (f) => f.shadowRoot.querySelectorAll('.fm-ed p').length), 2, 'two paragraphs while editing');
-    await p.keyboard.press('Enter');
+    await p.keyboard.press('ControlOrMeta+Shift+Enter');
     await settle(p);
     assert.deepEqual(await node(p, 'a'), { id: 'a', text: 'one\ntwo' }, 'plain paragraphs are stored as text alone');
     await edit(p);
     await p.keyboard.type('- one');
-    await p.keyboard.press('Shift+Enter');
-    await p.keyboard.type('two');
     await p.keyboard.press('Enter');
+    await p.keyboard.type('two');
+    await p.keyboard.press('ControlOrMeta+Shift+Enter');
     await settle(p);
     const n = await node(p, 'a');
     assert.equal(n.text, '- one\n- two');
@@ -145,7 +145,7 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
     assert.equal(await flow(p, (f) => f.editing?.kind === 'node' && f.editing.id), 'a', 'still editing the same node');
     assert.equal(await flow(p, (f) => f.shadowRoot.querySelector('.fm-ed .ProseMirror').textContent), 'kept', 'the words are untouched');
     assert.deepEqual(await flow(p, (f) => ({ doc: f.doc, entries: f.hist.entries.length })), before, 'no save, no new node');
-    await p.keyboard.press('Enter');
+    await p.keyboard.press('ControlOrMeta+Shift+Enter');
     await settle(p);
     assert.deepEqual((await node(p, 'a')).content, n.content, 'formatting unchanged by an unchanged save');
   });
@@ -163,7 +163,7 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
     assert.ok(Math.abs(m.ed - m.t) < 1 && Math.abs(m.pm - m.t) < 1, `editor ${m.ed} / ${m.pm} px fills the node's text box ${m.t} px`);
     assert.equal(m.ph, '"Type…"', 'the placeholder shows');
     await p.keyboard.type('Third');
-    await p.keyboard.press('Enter');
+    await p.keyboard.press('ControlOrMeta+Shift+Enter');
     await settle(p);
     assert.equal(await flow(p, (f) => f.doc.nodes.at(-1).text), 'Third');
   });
@@ -172,7 +172,7 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
     await load(p);
     await edit(p);
     await p.keyboard.type('- [ ] milk');
-    await p.keyboard.press('Shift+Enter');
+    await p.keyboard.press('Enter');
     await p.keyboard.type('eggs');
     const nodes = await flow(p, (f) => f.doc.nodes.length);
     await p.keyboard.press(`${META}+Enter`);
@@ -181,7 +181,7 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
     await p.keyboard.press(`${META}+Enter`);
     assert.equal(await flow(p, (f) => f.shadowRoot.querySelector('.fm-ed ul[data-type="taskList"] > li:last-child').dataset.checked), 'false', 'a second ⌘↵ unticks it');
     await p.keyboard.press(`${META}+Enter`);
-    await p.keyboard.press('Enter');
+    await p.keyboard.press('ControlOrMeta+Shift+Enter');
     await settle(p);
     assert.equal(await flow(p, (f) => f.doc.nodes.length), nodes, 'no node was added');
     const n = await node(p, 'a');
@@ -199,7 +199,7 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
     await load(p);
     await edit(p);
     await p.keyboard.type('>v Summary');
-    await p.keyboard.press('Shift+Enter');
+    await p.keyboard.press('Enter');
     await p.keyboard.type('inside');
     const shown = () => flow(p, (f) => {
       const d = f.shadowRoot.querySelector('.fm-ed .kk-fm-details');
@@ -211,7 +211,7 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
     await p.keyboard.press(`${META}+Enter`);
     assert.deepEqual(await shown(), { open: 'true', contents: true, marker: '"▾"' }, 'and again opens it');
     await p.keyboard.press(`${META}+Enter`);
-    await p.keyboard.press('Enter');
+    await p.keyboard.press('ControlOrMeta+Shift+Enter');
     await settle(p);
     const n = await node(p, 'a');
     assert.equal(n.content.content[0].type, 'details');
@@ -225,7 +225,7 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
     await p.keyboard.press('Backspace'); // the words were selected: a line of images alone
     await pasteImages(p, [[300, 200, 'red'], [200, 300, 'green'], [400, 400, 'blue']]);
     await p.waitForFunction(() => document.querySelector('lode-flow').shadowRoot.querySelectorAll('.fm-ed .kk-fm-image').length === 3);
-    await p.keyboard.press('Enter');
+    await p.keyboard.press('ControlOrMeta+Shift+Enter');
     await settle(p, 400);
     const n = await node(p, 'a');
     const images = n.content.content.flatMap((b) => b.content ?? []).filter((i) => i.type === 'image');
@@ -256,7 +256,7 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
     await p.keyboard.press('ArrowRight'); // from everything selected to the end
     await pasteImages(p, [[100, 100, 'gold']]);
     await p.waitForFunction(() => document.querySelector('lode-flow').shadowRoot.querySelectorAll('.fm-ed .kk-fm-image').length === 4);
-    await p.keyboard.press('Enter');
+    await p.keyboard.press('ControlOrMeta+Shift+Enter');
     await settle(p, 400);
     const tops = await flow(p, (f) => [...f.shadowRoot.querySelectorAll('.node[data-id="a"] .kk-fm-image')].map((e) => e.getBoundingClientRect().top));
     assert.ok(tops[3] > tops[2] + 10, 'the fourth image starts a new row');
@@ -280,7 +280,7 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
       pm.dispatchEvent(e);
     });
     await p.waitForFunction(() => document.querySelector('lode-flow').shadowRoot.querySelectorAll('.fm-ed .kk-fm-image').length === 1);
-    await p.keyboard.press('Enter');
+    await p.keyboard.press('ControlOrMeta+Shift+Enter');
     await settle(p);
     const n = await node(p, 'a');
     assert.equal(n.text, 'First![]', 'the image follows the words');
@@ -344,7 +344,7 @@ for (const [name, engine] of Object.entries({ chromium, firefox, webkit })) {
     await p.keyboard.press('Enter');
     await p.waitForSelector('lode-flow >> textarea.ed');
     await p.keyboard.type('plain now');
-    await p.keyboard.press('Enter');
+    await p.keyboard.press('ControlOrMeta+Shift+Enter');
     await settle(p);
     assert.deepEqual(await node(p, 'a'), { id: 'a', text: 'plain now' }, 'changed words drop it');
   });

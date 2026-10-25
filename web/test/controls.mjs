@@ -155,7 +155,7 @@ try {
           assert.ok(geometry.top >= geometry.vp.top + 7 && geometry.left >= geometry.vp.left + 7 && geometry.right <= geometry.vp.right - 7 && geometry.bottom <= geometry.vp.bottom - 7, 'draft fits inside canvas');
           assert.equal(geometry.overlap, false, 'toolbar does not cover active draft');
           assert.equal(geometry.focused, true, 'draft retains typing focus');
-          await page.keyboard.type('Reachable idea'); await page.keyboard.press('Enter');
+          await page.keyboard.type('Reachable idea'); await page.keyboard.press('ControlOrMeta+Shift+Enter');
           assert.equal((await flow(page, f => f.doc.nodes))[0].text, 'Reachable idea');
           const saved = await flow(page, f => f.getState());
           assert.equal(saved.history.entries.length, 1, 'automatic reveal adds no Pan steps');
@@ -180,7 +180,7 @@ try {
         });
         assert.ok(geometry.r.top >= geometry.vp.top + 7 && geometry.r.bottom <= geometry.vp.bottom - 7, 'resized canvas contains the whole draft');
         assert.equal(geometry.overlap, false); assert.equal(geometry.focused, true); assert.equal(geometry.hit, true);
-        await page.keyboard.type('Visible after resizing'); await page.keyboard.press('Enter');
+        await page.keyboard.type('Visible after resizing'); await page.keyboard.press('ControlOrMeta+Shift+Enter');
         assert.equal((await flow(page, f => f.doc.nodes))[0].text, 'Visible after resizing');
         await flow(page, f => { f.style.height = '100vh'; f.style.marginTop = '0'; });
         await page.emulateMedia({reducedMotion: 'no-preference'});
@@ -208,7 +208,7 @@ try {
             const r = ta.getBoundingClientRect(), vp = f.shadowRoot.querySelector('.vp').getBoundingClientRect(), p = f.shadowRoot.querySelector('.puck').getBoundingClientRect();
             return r.top >= vp.top + 7 && r.bottom <= vp.bottom - 7 && r.left >= vp.left + 7 && r.right <= vp.right - 7 && !(r.left < p.right && r.right > p.left && r.top < p.bottom && r.bottom > p.top) && f.shadowRoot.activeElement === ta;
           }, null, {timeout: 3000});
-            await page.keyboard.type(' Reachable'); await page.keyboard.press('Enter');
+            await page.keyboard.type(' Reachable'); await page.keyboard.press('ControlOrMeta+Shift+Enter');
             assert.equal(await page.locator('textarea').count(), 0);
           } catch { failures.push(`${c.sel.join(',')}:${c.key || 'addLinkedTo'}`); }
         }
@@ -231,7 +231,7 @@ try {
         });
         assert.ok(geometry.r.top >= geometry.parent.top + 7 && geometry.r.bottom <= geometry.parent.bottom - 7, 'editor lies within parent visible region');
         assert.equal(geometry.focused, true);
-        await page.keyboard.type(' in view'); await page.keyboard.press('Enter');
+        await page.keyboard.type(' in view'); await page.keyboard.press('ControlOrMeta+Shift+Enter');
         await flow(page, f => { const parent = f.parentElement; parent.before(f); parent.remove(); f.style.height = '100vh'; });
         await page.emulateMedia({reducedMotion: 'no-preference'});
       });
@@ -477,7 +477,7 @@ try {
           else if (action === 'edit') {
             await flow(page, (f) => f.startEdit('a'));
             await page.locator('textarea').fill('First edited');
-            await page.keyboard.press('Enter');
+            await page.keyboard.press('ControlOrMeta+Shift+Enter');
           } else if (action === 'keyboard-undo') await page.keyboard.press('ControlOrMeta+z');
           else if (action === 'keyboard-redo') await page.keyboard.press('ControlOrMeta+Shift+z');
           else await flow(page, (f, action) => f[action === 'api-undo' ? 'undo' : action === 'api-redo' ? 'redo' : action === 'fast-forward' ? 'fastForward' : 'rewind'](), action);

@@ -48,7 +48,7 @@ try {
   await check('99 → 100 succeeds; 101st free node leaves no editor or undo entry', async () => {
     await reset(doc(99)); await pick([]); await page.keyboard.press('n');
     await page.waitForSelector('textarea.ed');
-    await page.locator('textarea.ed').fill('The hundredth item'); await page.keyboard.press('Enter');
+    await page.locator('textarea.ed').fill('The hundredth item'); await page.keyboard.press('ControlOrMeta+Shift+Enter');
     assert.equal((await state()).items, 100);
     await pick([]); const before = await state(); await page.keyboard.press('n');
     await unchanged(before, 'rejected free add leaves the complete state unchanged');
@@ -60,7 +60,7 @@ try {
 
   await check('at 100, host select+focus allows text editing, delete and undo/redo', async () => {
     await pick(['n0']); await page.keyboard.press('Enter'); await page.waitForSelector('textarea.ed');
-    await page.locator('textarea.ed').fill('Edited at the limit'); await page.keyboard.press('Enter');
+    await page.locator('textarea.ed').fill('Edited at the limit'); await page.keyboard.press('ControlOrMeta+Shift+Enter');
     assert.equal(await E(() => document.querySelector('lode-flow').doc.nodes[0].text), 'Edited at the limit');
     assert.equal((await state()).items, 100);
     await page.keyboard.press('Delete'); assert.equal((await state()).items, 99);
@@ -72,7 +72,7 @@ try {
     await reset(doc(99)); await pick(['n0']); const before = await state(); await page.keyboard.press('n');
     await unchanged(before, 'node plus edge does not partially add its node');
     await reset(doc(98)); await pick(['n0']); await page.keyboard.press('n'); await page.waitForSelector('textarea.ed');
-    await page.locator('textarea.ed').fill('One node and one edge'); await page.keyboard.press('Enter');
+    await page.locator('textarea.ed').fill('One node and one edge'); await page.keyboard.press('ControlOrMeta+Shift+Enter');
     assert.equal((await state()).items, 100);
     assert.equal(await E(() => document.querySelector('lode-flow').doc.edges.length), 1);
   });
@@ -98,7 +98,7 @@ try {
 
   await check('groups and junctions each consume one item; grouping respects the boundary', async () => {
     await reset(doc(99)); await pick(['n0', 'n1']); await page.keyboard.press('g'); await page.waitForSelector('textarea.ed');
-    await page.locator('textarea.ed').fill('A group is one item'); await page.keyboard.press('Enter');
+    await page.locator('textarea.ed').fill('A group is one item'); await page.keyboard.press('ControlOrMeta+Shift+Enter');
     assert.equal((await state()).items, 100);
     await pick(['n2', 'n3']); const before = await state(); await page.keyboard.press('g'); await unchanged(before, 'second group rejected');
     const merged = doc(95, {
@@ -156,7 +156,7 @@ try {
     assert.equal((await state()).items, 0);
     assert.match(await page.locator('.empty').textContent(), /saved data is unchanged/i);
     await pick([]); await page.keyboard.press('n'); await page.waitForSelector('textarea.ed');
-    await page.locator('textarea.ed').fill('Unsaved'); await page.keyboard.press('Enter'); await page.waitForTimeout(350);
+    await page.locator('textarea.ed').fill('Unsaved'); await page.keyboard.press('ControlOrMeta+Shift+Enter'); await page.waitForTimeout(350);
     assert.equal(await E(() => localStorage.getItem('lodeflow:limit-test')), original);
     await E((valid) => {
       const f = document.querySelector('lode-flow'); f.setDoc(valid); f.select(['n0']);
@@ -180,11 +180,11 @@ try {
     await E(() => document.querySelector('lode-flow').removeAttribute('max-items')); await reset(doc(101));
     assert.equal((await state()).max, null);
     await pick([]); await page.keyboard.press('n'); await page.waitForSelector('textarea.ed');
-    await page.locator('textarea.ed').fill('Uncapped item 102'); await page.keyboard.press('Enter');
+    await page.locator('textarea.ed').fill('Uncapped item 102'); await page.keyboard.press('ControlOrMeta+Shift+Enter');
     assert.equal((await state()).items, 102);
     await E(() => document.querySelector('lode-flow').setAttribute('max-items', '100'));
     await pick([]); const before = await state(); await page.keyboard.press('n'); await unchanged(before, 'lower cap preserves existing content');
-    await pick(['n0']); await page.keyboard.press('Enter'); await page.locator('textarea.ed').fill('Still editable'); await page.keyboard.press('Enter');
+    await pick(['n0']); await page.keyboard.press('Enter'); await page.locator('textarea.ed').fill('Still editable'); await page.keyboard.press('ControlOrMeta+Shift+Enter');
     assert.equal((await state()).items, 102); await page.keyboard.press('Delete'); assert.equal((await state()).items, 101);
     await page.waitForTimeout(200); // let the successful deletion's follow-camera refit finish
     const deleted = await state(); await E(() => document.querySelector('lode-flow').undo()); await unchanged(deleted, 'undo cannot grow an oversized document');

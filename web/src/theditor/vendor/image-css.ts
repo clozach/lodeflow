@@ -79,7 +79,7 @@ export const IMAGE_CSS = `
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
-.dark .kk-fm-image { --kk-fm-caption-color: #b8b8b8; --kk-fm-caption-prompt: #a0a0a0; }
+.dark .kk-fm-image { --kk-fm-caption-color: #b8b8b8; --kk-fm-caption-prompt: #a8a8a8; --kk-fm-caption-prompt-paper: rgb(20 20 20 / 0.88); }
 .kk-fm-caption-input, .kk-fm-caption-mirror {
     grid-area: 1 / 1;
     display: block;
@@ -106,15 +106,53 @@ export const IMAGE_CSS = `
     outline: none;
 }
 .kk-fm-caption-input:focus-visible { outline: 1px solid currentColor; outline-offset: 2px; }
+.kk-fm-caption-input:disabled { opacity: 1; color: inherit; -webkit-text-fill-color: currentColor; cursor: default; }
 .kk-fm-caption-mirror { visibility: hidden; pointer-events: none; }
 .kk-fm-caption[data-empty="true"]::after {
     content: attr(data-prompt);
     grid-area: 1 / 1;
-    color: var(--kk-fm-caption-prompt, #777);
+    color: var(--kk-fm-caption-prompt, #6b6b6b);
     pointer-events: none;
     visibility: hidden;
 }
-.kk-fm-caption[data-empty="true"]:hover:not(:focus-within)::after { visibility: visible; }
+/* An empty caption at rest takes no room: the frame's own padding is its
+   thin edge. Its field sits just below the picture's foot, so a click there or Tab
+   reaches it; the prompt shows there on hover, out of flow, moving nothing.
+   Focus opens the caption in flow, where the words will go. */
+.kk-fm-caption[data-empty="true"]:not(:focus-within) {
+    display: block;
+    height: 0;
+    min-height: 0;
+    margin-top: 0;
+}
+.kk-fm-caption[data-empty="true"]:not(:focus-within) > .kk-fm-caption-mirror { display: none; }
+.kk-fm-caption[data-empty="true"]:not(:focus-within) > .kk-fm-caption-input,
+.kk-fm-caption[data-empty="true"]:not(:focus-within)::after {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: auto;
+    height: auto;
+    min-height: 1.4em;
+    padding: 0;
+}
+.kk-fm-caption[data-empty="true"]:not(:focus-within) > .kk-fm-caption-input {
+    color: transparent;
+    cursor: text;
+}
+.kk-fm-caption[data-empty="true"]:not(:focus-within)::after {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    border-radius: 6px;
+    background: var(--kk-fm-caption-prompt-paper, rgb(255 255 255 / 0.9));
+    visibility: hidden;
+}
+.kk-fm-image:hover > .kk-fm-caption[data-empty="true"]:not(:focus-within)::after { visibility: visible; }
+/* Read-only: an empty caption is nothing at all. */
+.kk-fm-caption[data-empty="true"]:has(> .kk-fm-caption-input:disabled) { display: none; }
 .kk-fm-image[style*="aspect-ratio"] > img {
     height: 100%;
 }

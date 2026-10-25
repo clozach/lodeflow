@@ -138,7 +138,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit], ['fire
     await p.keyboard.press(`${META}+c`);
     await p.keyboard.press('ArrowRight');
     await p.keyboard.press(`${META}+v`);
-    await p.keyboard.press('Enter');
+    await p.keyboard.press('ControlOrMeta+Shift+Enter');
     await settle(p);
     const b = await doc(p, 'b');
     assert.deepEqual(b.nodes.map((n) => n.text), ['hellohello']);
@@ -149,7 +149,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit], ['fire
     await p.keyboard.press('a');
     await settle(p);
     assert.equal(await flow(p, 'b', (f) => f.shadowRoot.activeElement?.value), 'relates to');
-    await p.keyboard.press('Enter');
+    await p.keyboard.press('ControlOrMeta+Shift+Enter');
     await settle(p);
     const b = await doc(p, 'b');
     assert.deepEqual(b.loose.map((l) => l.label), ['relates to']);
@@ -180,7 +180,7 @@ for (const [name, engine] of [['chromium', chromium], ['webkit', webkit], ['fire
     await pick(p, 'b', ['p']);
     await p.keyboard.press('a');
     await settle(p);
-    await p.keyboard.press('Enter');
+    await p.keyboard.press('ControlOrMeta+Shift+Enter');
     await settle(p);
     const [l] = (await doc(p, 'b')).loose;
     assert.equal(l.from, 'p');

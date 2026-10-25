@@ -1,5 +1,5 @@
 // theditor in a node: the Tiptap core of theditor (swamikk's formatted message editor), with
-// lodeflow's Edit-mode keys (↵ saves, ⇧↵ a new paragraph or list item, Esc saves), ⌘↵ for
+// lodeflow's Edit-mode keys (↵ paragraph, ⇧↵ soft return, ⇧⌘↵ or Esc saves), ⌘↵ for
 // theditor's toggle block control, images pasted, dropped or picked in as inline thumbs, and
 // theditor's magnets (its formatting toolbar and a picture's Style, Alignment and Tweak) from the
 // shared vanilla renderer, the same source the swamikk composer's React magnets read.
@@ -144,7 +144,6 @@ export const theditor: NodeEditorFactory = ({ host, initial, placeholder, label,
   host.append(el);
   let editor: Editor | null = null;
   let magnets: Magnets | null = null;
-  let passThrough = false;
   const insert = imageInserter(() => editor);
   // fm-empty, not empty: the diagram's own .empty is its empty-canvas hint (absolute, centred, padded),
   // which squeezed an empty node's editor to no width at all.
@@ -157,8 +156,8 @@ export const theditor: NodeEditorFactory = ({ host, initial, placeholder, label,
     content: docFromWording(initial.text, initial.content ? { kind: 'formatted', doc: initial.content } : undefined),
     editorProps: {
       attributes: { class: 'fm', role: 'textbox', 'aria-multiline': 'true', 'aria-label': label, spellcheck: 'true' },
-      handleKeyDown: (view, event) => {
-        if (passThrough || event.isComposing) return false;
+      handleKeyDown: (_view, event) => {
+        if (event.isComposing) return false;
         if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey) {
           // ⌘↵ is theditor's toggle block control in every tool that embeds it (Al, 2026-10-24): it
           // ticks or unticks the line's to-do, or opens or closes its toggle. The editor's keys win
@@ -170,17 +169,6 @@ export const theditor: NodeEditorFactory = ({ host, initial, placeholder, label,
         // The magnets' chords (formatting, a picture's ⌃⌥⌘S/L/T) and Tab into the toolbar.
         if (magnets?.handleEditorKey(event)) return true;
         if (hooks.onKeydown(event)) return true;
-        if (event.key === 'Enter' && event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
-          // ↵ saves, so ⇧↵ does what ↵ does in the editor: a new paragraph, list item or code line.
-          const enter = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true });
-          passThrough = true;
-          try {
-            view.someProp('handleKeyDown', (f) => f(view, enter));
-          } finally {
-            passThrough = false;
-          }
-          return true;
-        }
         return false;
       },
     },
@@ -193,12 +181,32 @@ export const theditor: NodeEditorFactory = ({ host, initial, placeholder, label,
   const live = editor;
   // This includes embedded caption controls, whose own blur does not emit
   // ProseMirror's editor blur event. A move inside the editor keeps it open.
+  let finishing = false;
   const leave = (event: FocusEvent) => {
-    if (live.isDestroyed) return;
+    if (live.isDestroyed || finishing) return;
     const next = event.relatedTarget as Node | null;
     if (!el.contains(next) && !magnets?.contains(next)) hooks.onBlur();
   };
   el.addEventListener('focusout', leave);
+  // Caption fields and magnet forms are outside ProseMirror's key handler.
+  // The host's finish chord still leaves the whole node editor from either.
+  const finishKey = (event: KeyboardEvent) => {
+    if (!event.isComposing && event.key === 'Enter' && event.shiftKey &&
+        (event.metaKey || event.ctrlKey) && !event.altKey) {
+      event.preventDefault();
+      // Submit a tuner's typed value before tearing its form down.
+      const target = event.target as HTMLElement;
+      finishing = true;
+      try {
+        if (target.matches('input, textarea, select')) target.blur();
+        hooks.onKeydown(event);
+      } finally {
+        finishing = false;
+      }
+      event.stopPropagation();
+    }
+  };
+  el.addEventListener('keydown', finishKey, true);
   const layer = host.getRootNode() as ShadowRoot | Document;
   let pick: (() => void) | null = null;
   magnets = mountMagnets({
@@ -211,8 +219,9 @@ export const theditor: NodeEditorFactory = ({ host, initial, placeholder, label,
     skin: { iconUrl: (name) => ICON_URLS[name] ?? '' },
     pickImage: () => pick?.(),
     dark: () => drawnDark(host),
-    onLeave: () => hooks.onBlur(),
+    onLeave: () => { if (!finishing) hooks.onBlur(); },
   });
+  magnets.root.addEventListener('keydown', finishKey, true);
   pick = imagePicker(magnets.root, insert);
   return {
     el,
@@ -228,6 +237,8 @@ export const theditor: NodeEditorFactory = ({ host, initial, placeholder, label,
     hasFocus: () => !live.isDestroyed && (live.view.hasFocus() || el.contains((layer as ShadowRoot | Document).activeElement) || !!magnets?.contains((layer as ShadowRoot | Document).activeElement)),
     destroy: () => {
       el.removeEventListener('focusout', leave);
+      el.removeEventListener('keydown', finishKey, true);
+      magnets?.root.removeEventListener('keydown', finishKey, true);
       magnets?.destroy();
       live.destroy();
     },

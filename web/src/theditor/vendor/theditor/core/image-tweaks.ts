@@ -150,6 +150,24 @@ function withShadow(attrs: FullImageAttrs, part: 0 | 1 | 2, value: number) {
     });
 }
 
+/* ---- Width presets: a third of the text (the default), two, or all ---- */
+
+export const WIDTH_CUSTOM = "custom";
+export const WIDTH_PRESETS = [
+    { label: "1/3", width: FORMATTED_IMAGE_DEFAULTS.width },
+    { label: "2/3", width: 0.667 },
+    { label: "3/3", width: 1 },
+    { label: WIDTH_CUSTOM, width: null },
+] as const;
+
+/** The preset a stored width is (within rounding), if any. */
+export function widthPreset(width: number) {
+    return WIDTH_PRESETS.find(
+        (preset) =>
+            preset.width !== null && Math.abs(preset.width - width) < 0.002,
+    );
+}
+
 /* ---- The registry ---- */
 
 export type TweakControl =
@@ -503,8 +521,8 @@ export const TWEAK_ROWS: readonly TweakRow[] = [
                 key: "rotate",
                 label: "tilt",
                 unit: "deg",
-                min: -45,
-                max: 45,
+                min: -180,
+                max: 180,
                 step: 1,
                 icon: "drag",
                 get: (ctx) => unitless(style(ctx, "rotate"), "deg") ?? 0,
@@ -544,6 +562,21 @@ export const TWEAK_ROWS: readonly TweakRow[] = [
         synonyms: ["size", "columns", "wide"],
         properties: ["width"],
         controls: [
+            {
+                kind: "choice",
+                key: "width-preset",
+                label: "width preset",
+                options: WIDTH_PRESETS.map((preset) => preset.label),
+                get: (ctx) => widthPreset(ctx.attrs.width)?.label ?? WIDTH_CUSTOM,
+                // "custom" names a width the presets don't hold; picking it
+                // keeps that width (the number beside it changes it).
+                set: (_ctx, value) => {
+                    const preset = WIDTH_PRESETS.find(
+                        (item) => item.label === value,
+                    );
+                    return preset?.width != null ? { width: preset.width } : {};
+                },
+            },
             {
                 kind: "number",
                 key: "width",

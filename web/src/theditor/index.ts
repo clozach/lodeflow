@@ -26,9 +26,10 @@ export const THEDITOR_HELP: [string, string][] = [
   ['> ', 'Quote, at the start of a line'],
   ['--- ', 'Hair line, at the start of a line'],
   ['[words](https://…)', 'Link the words to the address'],
-  ['⇧↵', 'New paragraph or list item (↵ saves)'],
+  ['↵ · ⇧↵', 'New paragraph or list item · soft return within the line'],
+  [`⇧${MOD}↵`, 'Save and finish editing the selected item'],
   [`${MOD}↵`, 'Tick or untick a to-do, open or close a toggle'],
-  ['Paste or drop an image', 'Adds it in the line as a thumb, a third of the node’s width; three fit side by side'],
+  ['Paste or drop an image', 'Adds it in the line as a thumb, a third of the node’s width; three fit side by side; Tweak › width offers 1/3, 2/3 and 3/3'],
   ['Tab', 'The formatting magnets above the node (← → between them; Tab again a selected picture’s magnets)'],
   ['⌃⌥⌘S · ⌃⌥⌘L · ⌃⌥⌘T', 'A selected picture’s Style, Alignment and Tweak (⌃⌥⌘T makes a toggle otherwise)'],
 ];

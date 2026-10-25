@@ -183,7 +183,7 @@ await scenario('resizing the frame re-orients the flow (and back)', async (page)
   assert.equal((await el(page)).info.orientation, 'lr');
 });
 
-await scenario('click selects; click again edits; Enter saves; ⌘Z/Ctrl+Z restores the old text', async (page) => {
+await scenario('click selects; click again edits; ControlOrMeta+Shift+Enter saves; ⌘Z/Ctrl+Z restores the old text', async (page) => {
   const b = await center(page, '.node[data-id="cycle"]');
   await page.mouse.click(b.x, b.y);
   await settle(page, 300);
@@ -198,7 +198,7 @@ await scenario('click selects; click again edits; Enter saves; ⌘Z/Ctrl+Z resto
   await page.keyboard.type(' while reviews queue up');
   await settle(page, 400);
   await shot(page, '05-editing');
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+Shift+Enter');
   await settle(page, 500);
   const t1 = (await el(page)).doc.nodes.find((n) => n.id === 'cycle').text;
   assert.equal(t1, 'Cycle time grows while reviews queue up');
@@ -267,7 +267,7 @@ await scenario('pan, zoom, rotate and selection are undoable, one step per gestu
   assert.ok(Math.abs((await el(page)).cam.x - cam1.x) < 0.5, 'redo pan');
 });
 
-await scenario('keyboard only: arrows walk the diagram, N adds after, Ctrl+Enter saves, ↵ then N chains, Delete + toolbar Undo', async (page) => {
+await scenario('keyboard only: arrows walk the diagram, N adds after, ControlOrMeta+Shift+Enter saves, ↵ then N chains, Delete + toolbar Undo', async (page) => {
   await page.focus('lode-flow');
   await page.keyboard.press('Tab');
   await E(page, () => document.querySelector('lode-flow').shadowRoot.querySelector('.vp').focus());
@@ -283,18 +283,18 @@ await scenario('keyboard only: arrows walk the diagram, N adds after, Ctrl+Enter
   await page.keyboard.press('n');
   await settle(page, 300);
   await page.keyboard.type('First consequence');
-  // Ctrl+Enter (⌘↵) saves as ↵ does and adds nothing (2026-10-24: ⌘↵ is reserved for toggling a
-  // block control in tools that embed theditor); ↵ then N adds the next node.
-  await page.keyboard.press('Control+Enter');
+  // ControlOrMeta+Shift+Enter saves and adds nothing (ControlOrMeta+Enter alone is reserved for
+  // theditor's block toggle and is a no-op in the plain editor); ↵ then N adds the next node.
+  await page.keyboard.press('ControlOrMeta+Shift+Enter');
   await settle(page, 300);
   s = await el(page);
-  assert.equal(s.doc.nodes.length, before + 1, 'Ctrl+Enter saved and added no node');
+  assert.equal(s.doc.nodes.length, before + 1, 'ControlOrMeta+Shift+Enter saved and added no node');
   assert.equal(s.doc.nodes.at(-1).text, 'First consequence');
   assert.equal(await E(page, () => !!document.querySelector('lode-flow').editing), false, 'and left Edit mode');
   await page.keyboard.press('n');
   await settle(page, 300);
   await page.keyboard.type('Second consequence');
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+Shift+Enter');
   await settle(page, 600);
   s = await el(page);
   assert.equal(s.doc.nodes.length, before + 2);
@@ -711,7 +711,7 @@ await scenario('shift-drag box-selects; G groups and names; C collapses to one n
   await page.keyboard.press('g');
   await settle(page, 300);
   await page.keyboard.type('Fallout');
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+Shift+Enter');
   await settle(page, 600);
   let s = await el(page);
   const g = s.doc.groups.find((x) => x.text === 'Fallout');
@@ -1142,7 +1142,7 @@ await scenario('dropping a link on an edge merges them: one junction, one shared
   await settle(page, 300);
   assert.equal(await shadowActive(page), 'TEXTAREA.ed');
   await page.keyboard.type('within a quarter');
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+Shift+Enter');
   await settle(page, 700);
   s = await el(page);
   assert.equal(s.doc.edges.find((e) => e.id === trunk).label, 'within a quarter');
@@ -1158,7 +1158,7 @@ await scenario('dropping a link on an edge merges them: one junction, one shared
   await page.keyboard.press('Enter');
   await page.keyboard.press('ControlOrMeta+a');
   await page.keyboard.type('by next quarter');
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+Shift+Enter');
   await settle(page, 500);
   assert.equal((await el(page)).doc.edges.find((e) => e.id === trunk).label, 'by next quarter');
   // Deleting the branch dissolves the merge back into the plain edge, label kept.
@@ -1322,7 +1322,7 @@ await scenario('Add node: contextual N ⇧N on the selection and always on the d
   await page.mouse.click(...Object.values(await center(page, '.node-magnet [data-act="after"]')).slice(0, 2));
   await settle(page, 400);
   await page.keyboard.type('After trust');
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+Shift+Enter');
   await settle(page, 600);
   s = await el(page);
   const after = s.doc.nodes.find((n) => n.text === 'After trust');
@@ -1335,7 +1335,7 @@ await scenario('Add node: contextual N ⇧N on the selection and always on the d
   await page.keyboard.up('Shift');
   await settle(page, 400);
   await page.keyboard.type('Before trust');
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+Shift+Enter');
   await settle(page, 600);
   s = await el(page);
   const before = s.doc.nodes.find((n) => n.text === 'Before trust');
@@ -1353,7 +1353,7 @@ await scenario('Add node: contextual N ⇧N on the selection and always on the d
   await page.mouse.click(pill.x, pill.y);
   await settle(page, 400);
   await page.keyboard.type('Free');
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+Shift+Enter');
   await settle(page, 600);
   s = await el(page);
   const free = s.doc.nodes.find((n) => n.text === 'Free');
@@ -1395,7 +1395,7 @@ await scenario('Add node: contextual N ⇧N on the selection and always on the d
   await page.keyboard.press('Enter');
   await settle(page, 400);
   await page.keyboard.type('Many');
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+Shift+Enter');
   await settle(page, 700);
   s = await el(page);
   const many = s.doc.nodes.find((n) => n.text === 'Many');
@@ -1417,7 +1417,7 @@ await scenario('Add node: contextual N ⇧N on the selection and always on the d
   await page.keyboard.press('Shift+Enter');
   await settle(page, 400);
   await page.keyboard.type('Follows');
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+Shift+Enter');
   await settle(page, 600);
   s = await el(page);
   const follows = s.doc.nodes.find((n) => n.text === 'Follows');
@@ -1639,7 +1639,7 @@ await scenario('edges: click selects, click again labels, S / ⇧S (or Select ed
   await page.keyboard.type('fast');
   await settle(page, 300);
   await shot(page, '19-edge-label-typing');
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+Shift+Enter');
   await settle(page, 700);
   assert.equal((await el(page)).doc.edges.find((e) => e.id === id).label, 'fast');
   assertNoOverlap(await boxes(page));
@@ -1922,7 +1922,7 @@ for (const target of ['a', 'g', 'g-proxy', 'g-nested', 'edge']) await scenario(`
   await E(page, (collapsed) => document.querySelector('lode-flow').setAllGroupsCollapsed(collapsed), target === 'g-proxy');
   await settle(page, 500);
   await E(page, () => document.querySelector('lode-flow').editing.editor.el.focus());
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+Shift+Enter');
   await settle(page, 500);
   const doc = (await el(page)).doc;
   assert.equal(target === 'a' ? doc.nodes[0].text : target.startsWith('g') ? doc.groups[0].text : doc.edges[0].label, 'Pending text', 'the draft can still be saved after restoring the group shape');
@@ -1945,7 +1945,7 @@ for (const collapsed of [false, true]) await scenario(`single-group ${collapsed 
       return { draft: f.editing?.editor.el.value, text: f.doc.groups[0].text, kinds: f.hist.entries.map((e) => e.kind) };
     }), { draft: 'Pending title', text: 'Original', kinds: ['select', 'collapse'] });
     await E(page, () => document.querySelector('lode-flow').editing.editor.el.focus());
-    await page.keyboard.press('Enter');
+    await page.keyboard.press('ControlOrMeta+Shift+Enter');
     await settle(page, 300);
     assert.equal((await el(page)).doc.groups[0].text, 'Pending title');
 });
@@ -2054,7 +2054,7 @@ await scenario('split an edge: with an edge selected, N inserts a node in its mi
   await page.keyboard.press('n');
   await settle(page, 300);
   await page.keyboard.type('Churn rises');
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+Shift+Enter');
   await settle(page, 700);
   s = await el(page);
   const mid = s.doc.nodes.find((n) => n.text === 'Churn rises');
@@ -2192,7 +2192,7 @@ await scenario('typing that keeps a node’s size does not re-lay out; edits nev
   await settle(page, 400);
   r = await E(page, () => ({ ...window.__runs, inputs: 0 }));
   assert.equal(r.relayout, 0, 'one character that fits on the line: no re-layout');
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+Shift+Enter');
   await settle(page, 600);
   const repeats = {};
   for (const k of ['n', 'Escape', 'Delete', 'Control+z']) {
@@ -2387,7 +2387,7 @@ await scenario('an edge label comes off with ⇧⌫ (or Remove label) and the ed
   await E(page, (i) => document.querySelector('lode-flow').startEdit(i), id);
   await settle(page, 200);
   await page.keyboard.type('fast');
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+Shift+Enter');
   await settle(page, 600);
   await E(page, (i) => document.querySelector('lode-flow').select([i]), id);
   await settle(page, 300);
@@ -2412,7 +2412,7 @@ await scenario('an edge label comes off with ⇧⌫ (or Remove label) and the ed
   await page.keyboard.press('Shift+N');
   await settle(page, 400);
   await page.keyboard.type('Reviews pile up');
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+Shift+Enter');
   await settle(page, 700);
   s = await el(page);
   const added = s.doc.nodes.find((n) => n.text === 'Reviews pile up');
@@ -2487,7 +2487,7 @@ await scenario('typing a group title re-lays out only when the title wraps to an
   const h1 = await E(page, () => document.querySelector('lode-flow').shadowRoot.querySelector('.glabel[data-gid="delivery"]').offsetHeight);
   assert.ok(h1 > h0, `the title wrapped (${h0} → ${h1} px)`);
   assert.ok((await E(page, () => window.__gl)) >= 1, 'a wrap re-lays out');
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('ControlOrMeta+Shift+Enter');
   await settle(page, 700);
   assertNoOverlap(await boxes(page));
 });

@@ -160,7 +160,7 @@ try {
     assert.match((await css('.node.editing', ['boxShadow'], '::after')).boxShadow, /0px 0px 0px 3px/, 'flat editing node keeps its ring');
     assert.equal((await css('textarea.ed', ['fontFamily'])).fontFamily, 'monospace');
     await page.locator('textarea.ed').fill('Edited label stays wrapped and readable');
-    await page.keyboard.press('Enter');
+    await page.keyboard.press('ControlOrMeta+Shift+Enter');
     await settle();
     assert.equal(await page.evaluate(() => document.querySelector('lode-flow').doc.nodes.find((n) => n.id === 'a').text), 'Edited label stays wrapped and readable');
     await page.locator('.node-magnet [data-act="nextedge"]').click();

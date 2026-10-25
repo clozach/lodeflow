@@ -1,5 +1,5 @@
 {
-  "source": "81ac4804a9d5df50ac140d1867e81ba73c58431bffebf57e5f5fa390a4f822bb",
+  "source": "7ebb396a4c7e9089ee876429007f4f4b3aaf23fa22d33817b43df7204829e10a",
   "folders": [
     "web/src/theditor/vendor/theditor/core",
     "web/src/theditor/vendor/theditor/vanilla",
@@ -12,7 +12,7 @@
     "web/src/theditor/vendor/field-core/field-core.js": "c1bae94b4e13c8c12c164ae2bca45ac7580cbe33f5958b60700e77f357d16c18",
     "web/src/theditor/vendor/field-core/field-core.mjs": "fe2e55479e23f4b920f7d57a2102eff8178450bf0dfebc31fb21fde9337b66c9",
     "web/src/theditor/vendor/field-core/icons.js": "cf5feaaed9c0fe7705b6d05a545687ed589287e4fb9d113757fa50836b87490f",
-    "web/src/theditor/vendor/theditor/chrome-css.ts": "a350d6d86fc5f9a37192ab34d4a3ba98a5151a77a2afe4c3182c0214d711007e",
+    "web/src/theditor/vendor/theditor/chrome-css.ts": "8806a1a72e77aa767243740f7199db3502b4bb6b16da4cc46b33a471fa08d57d",
     "web/src/theditor/vendor/theditor/core/actions.ts": "9cbfcb1d306fa1be1c9f43906d5da47938b67c03b6ee7ae525b4c96ff606bc38",
     "web/src/theditor/vendor/theditor/core/chords.ts": "e5468cbb85a580d503fa55b646755735e32a28b11d961b04e34151bb434efbcc",
     "web/src/theditor/vendor/theditor/core/copy.ts": "5173c26421e383adc0cbc1d40061e8d7a770f52858ca6b9043e04f13c3ca282b",
@@ -21,7 +21,7 @@
     "web/src/theditor/vendor/theditor/core/icons.ts": "186a8795a4c2ff6f42e5b269e41c01769dadb51e4adc4ffff7f18f42a30da835",
     "web/src/theditor/vendor/theditor/core/image-caption.ts": "24e7ff863bc4aae7aedd75d60ce49733e0ccbacac8f78b256cb330068d802a82",
     "web/src/theditor/vendor/theditor/core/image-tools.ts": "fb48ecc2cef7bcb9a6f430236857f8cd14a112b8b3601a17fec2d6365c69d1bf",
-    "web/src/theditor/vendor/theditor/core/image-tweaks.ts": "2333e1a74215c4c79a5c896b8acd5f40595e57fe0da4e2647d0e67b1d6487ffe",
+    "web/src/theditor/vendor/theditor/core/image-tweaks.ts": "e98fc30eddb82dd640b1b62fbc1dcc4ec2d3a4bebf22b277a4489e2e31a4ada3",
     "web/src/theditor/vendor/theditor/core/index.ts": "27cce4e491e6e19d7c090c715aa4b939c2c1e40adef1e4173c98aa5a4970ced7",
     "web/src/theditor/vendor/theditor/core/keys.ts": "cd51469911c0448d3e7339be97943d4bd02d9917035f6b9ebbdc46c9f67e049e",
     "web/src/theditor/vendor/theditor/core/link.ts": "e1f2ade13a9e43e5b421ef157b4daa60a4beccc2e5b7890337a2a4e2876196a0",

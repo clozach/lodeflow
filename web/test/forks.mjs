@@ -50,7 +50,7 @@ try {
       await select(p, "ab");
       await p.locator('.node-magnet [data-act="effect"]').click();
       await p.locator("textarea").fill("I eat rice");
-      await p.keyboard.press("Enter");
+      await p.keyboard.press("ControlOrMeta+Shift+Enter");
       await fork(p);
       let s = await state(p), j = s.doc.junctions[0];
       assert.equal(s.doc.edges.find((e) => e.id === "ab").to, j.id);
@@ -81,7 +81,7 @@ try {
       await select(p, branch.id);
       await p.keyboard.press("Enter");
       await p.locator("textarea").fill("Choose");
-      await p.keyboard.press("Enter");
+      await p.keyboard.press("ControlOrMeta+Shift+Enter");
       s = await state(p);
       assert.equal(s.doc.edges.find((e) => e.id === "ab").label, "Choose");
       assert.equal(s.doc.edges.filter((e) => e.label).length, 1);
@@ -182,7 +182,7 @@ try {
       await select(p, "ab");
       await p.locator('.node-magnet [data-act="effect"]').tap();
       await p.locator("textarea").fill("I eat rice");
-      await p.keyboard.press("Enter");
+      await p.keyboard.press("ControlOrMeta+Shift+Enter");
       await fork(p);
       assert.equal(await p.locator("lode-flow").evaluate((f) => [...f.shadowRoot.querySelectorAll("kbd")].filter((e) => e.getBoundingClientRect().width).length), 0);
     }, true);

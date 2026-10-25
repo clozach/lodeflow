@@ -49,6 +49,7 @@ const K = {
   cut: IS_MAC ? '⌘X' : 'Ctrl+X',
   paste: IS_MAC ? '⌘V' : 'Ctrl+V',
   modEnter: IS_MAC ? '⌘↵' : 'Ctrl+Enter',
+  editToggle: IS_MAC ? '⇧⌘↵' : 'Ctrl+Shift+Enter',
 };
 const SAMPLES = 24;
 /**
@@ -3017,7 +3018,7 @@ export class LodeFlowElement extends Base {
       </table>
       <h4>Keys</h4><table>
       ${row('Arrows', 'Move the selection to the nearest item that way (⇧ adds)')}
-      ${row('↵ · F2', 'Edit the selected item (a group: its title) · then ↵ saves, ⇧↵ new line, Esc saves, and the item stays selected (Esc again deselects all)')}
+      ${row('↵ · F2 · ' + K.editToggle, 'Edit the selected item (a group: its title). ' + K.editToggle + ' saves and finishes; ↵ inserts a paragraph, ⇧↵ a soft return. Esc also saves and keeps the item selected (Esc again deselects all)')}
       ${row('J (or ↵ with several or none selected)', 'Dive: each selected group gives the selection over to what is inside it, one level down, opening a collapsed group; nodes stay selected. Nothing selected (thick blue frame): the top level')}
       ${row('K (or ⇧↵)', 'Surface: the deepest selected items give way to the group around them, one level up; items higher up stay until the level reaches them. A group Dive opened closes again. From the top level: the whole diagram, nothing selected')}
       ${row('N / ⇧N', 'Add a node after / before the selected node. Nothing selected: N adds a node; ⇧N lists nodes for a new node to link before (↵) or after (⇧↵). An edge selected: N inserts a node in its middle. A plain edge or merge: ⇧N adds a new cause')}
@@ -3655,6 +3656,7 @@ export class LodeFlowElement extends Base {
         }
       },
       onKeydown: (e: KeyboardEvent) => {
+        if (e.isComposing) return false;
         if (e.key === 'Escape') {
           // Esc keeps the words as last typed and leaves Edit mode; the item stays selected (a second
           // Esc deselects all).
@@ -3662,12 +3664,11 @@ export class LodeFlowElement extends Base {
           this.finishEdit('save');
           return true;
         }
-        // ↵ saves; so does ⌘↵ (Ctrl+Enter), which no longer adds the next node: in tools that embed
-        // theditor it toggles a line's block control (Al, 2026-10-24), and theditor's kit takes it
-        // before this hook. ⇧↵ is the editor's own new line.
-        if (e.key === 'Enter' && (!e.shiftKey || e.metaKey || e.ctrlKey)) {
+        // The host owns edit mode; ordinary Return and Shift+Return belong
+        // to the editor. Command+Return stays reserved for block controls.
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.altKey) {
           e.preventDefault();
-          this.finishEdit('save');
+          if (e.shiftKey) this.finishEdit('save');
           return true;
         }
         return false;
@@ -5066,6 +5067,12 @@ export class LodeFlowElement extends Base {
         done();
         return this.deselectAll();
       }
+      return;
+    }
+    if (mod && e.shiftKey && !e.altKey && k === 'Enter' &&
+        (t === this.vp || t?.tagName === 'BUTTON')) {
+      done();
+      if (this.view.sel.length === 1) return this.startEdit(this.view.sel[0]);
       return;
     }
     if (mod) return;

@@ -36,7 +36,7 @@ const fillEditor = async (page, text) => {
   if (await editor.evaluate((e) => e.tagName === 'TEXTAREA')) return editor.fill(text);
   await editor.focus(); await page.keyboard.press('ControlOrMeta+a'); await page.keyboard.type(text);
 };
-const enterText = async (page, text) => { await fillEditor(page, text); await page.keyboard.press('Enter'); };
+const enterText = async (page, text) => { await fillEditor(page, text); await page.keyboard.press('ControlOrMeta+Shift+Enter'); };
 const edit = async (page, text) => { await page.keyboard.press('Enter'); await enterText(page, text); };
 const start = async (page) => { await page.locator('#flow').evaluate((flow) => flow.focus()); await page.keyboard.press('n'); await enterText(page, 'An idea'); await current(page, 'rename'); };
 const help = async (page, touch = false) => { if (!await page.locator('#appearance').isVisible()) await page.locator('#flow [data-act="help"]')[touch ? 'tap' : 'click'](); await page.locator('#appearance').waitFor({ state: 'visible' }); };
@@ -259,7 +259,7 @@ try {
         }, null, {timeout:5000});
         await reachable();
         await page.setViewportSize({width:393,height:560}); await reachable();
-        await page.keyboard.type('My reachable idea'); await page.keyboard.press('Enter');
+        await page.keyboard.type('My reachable idea'); await page.keyboard.press('ControlOrMeta+Shift+Enter');
         assert.equal((await docOf(page)).nodes[0].text, 'My reachable idea');
         assert.equal(await page.locator(`#flow :is(${EDITOR})`).count(),0);
       }, {reducedMotion:'reduce'});

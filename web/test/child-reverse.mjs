@@ -47,7 +47,7 @@ async function dragEmpty(p, id = 'a', { shift = false, distance = 170 } = {}) {
 }
 async function typeChild(p, text = 'New child') {
   await p.locator('textarea.ed').fill(text);
-  await p.keyboard.press('Enter');
+  await p.keyboard.press('ControlOrMeta+Shift+Enter');
   await settle(p);
 }
 function reversedEdges(before, after) {
@@ -207,7 +207,7 @@ try {
         await p.keyboard.press('Enter');
         await p.locator('textarea.ed').fill('R is a letter');
         await p.keyboard.press('Shift+r');
-        await p.keyboard.press('Enter'); await settle(p);
+        await p.keyboard.press('ControlOrMeta+Shift+Enter'); await settle(p);
         const d = await doc(p);
         assert.equal(d.edges[0].from, 'b');
         assert.equal(d.edges[0].to, 'a');

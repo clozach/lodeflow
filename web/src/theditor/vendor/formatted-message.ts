@@ -983,16 +983,14 @@ export function formattedWords(doc: FormattedDoc): string {
 }
 
 /** True when the document holds nothing a plain field could not: only
- * paragraphs of unmarked text, no image. Such a message is stored as text
+ * paragraphs of unmarked text, without images or soft breaks. Such a message is stored as text
  * alone. */
 export function formattedIsPlain(doc: FormattedDoc): boolean {
     return doc.content.every(
         (block) =>
             block.type === "paragraph" &&
             (block.content || []).every(
-                (node) =>
-                    node.type === "hardBreak" ||
-                    (node.type === "text" && !node.marks),
+                (node) => node.type === "text" && !node.marks,
             ),
     );
 }

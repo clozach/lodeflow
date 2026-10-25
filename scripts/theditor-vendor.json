@@ -1,5 +1,5 @@
 {
-  "source": "52962d6a69095aedf04f1db2da32d205b6b71bf822b090a7b11c1ad3fce00d82",
+  "source": "4a7d1a9cb4d833ed86e0c5399e758496349f24c33714b41c86d120883b84fd31",
   "folders": [
     "web/src/theditor/vendor/theditor/core",
     "web/src/theditor/vendor/theditor/vanilla",
@@ -19,10 +19,11 @@
     "web/src/theditor/vendor/theditor/core/dismiss.ts": "605ea05ce8b741734a66af1e50717c993df0329199411f9205f10b68adec1bad",
     "web/src/theditor/vendor/theditor/core/fixed-layer.ts": "2f47a0e83c667897b7b844b25c762054476f8714fb7922d552ddb232319fda34",
     "web/src/theditor/vendor/theditor/core/icons.ts": "186a8795a4c2ff6f42e5b269e41c01769dadb51e4adc4ffff7f18f42a30da835",
+    "web/src/theditor/vendor/theditor/core/image-caption.ts": "270d5bc8137810dca39ef330ac8c516b0982beb54285b173f961cc993f4e9a1c",
     "web/src/theditor/vendor/theditor/core/image-tools.ts": "fb48ecc2cef7bcb9a6f430236857f8cd14a112b8b3601a17fec2d6365c69d1bf",
-    "web/src/theditor/vendor/theditor/core/image-tweaks.ts": "f5528e796bb5c9271be4c249f12c44c0e57530549d83e521ef2b57d29614d69d",
+    "web/src/theditor/vendor/theditor/core/image-tweaks.ts": "2333e1a74215c4c79a5c896b8acd5f40595e57fe0da4e2647d0e67b1d6487ffe",
     "web/src/theditor/vendor/theditor/core/index.ts": "27cce4e491e6e19d7c090c715aa4b939c2c1e40adef1e4173c98aa5a4970ced7",
-    "web/src/theditor/vendor/theditor/core/keys.ts": "14a1350bfeaa1a8ed954108b81f3b2860ce91b8dbca040670cd4885a4e240960",
+    "web/src/theditor/vendor/theditor/core/keys.ts": "cd51469911c0448d3e7339be97943d4bd02d9917035f6b9ebbdc46c9f67e049e",
     "web/src/theditor/vendor/theditor/core/link.ts": "e1f2ade13a9e43e5b421ef157b4daa60a4beccc2e5b7890337a2a4e2876196a0",
     "web/src/theditor/vendor/theditor/core/lozenge-layout.ts": "1b2d2f2ce0c2bb306cc18c743c3aaaaf59f7e8056c5fa4cae7bf66a6e18f2138",
     "web/src/theditor/vendor/theditor/core/lozenge-placement.ts": "abd7c5fe7c927fa746bcdcf7e47db7b630e10c35c0674d92525ed3e4e0465a7b",

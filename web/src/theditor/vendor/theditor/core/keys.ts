@@ -8,8 +8,8 @@
  * - A selected picture's magnets answer first: ⌃⌥⌘S Style, ⌃⌥⌘L Alignment,
  *   ⌃⌥⌘T Tweak (tracker `tweak-chord = keep`: ⌃⌥⌘T is Toggle otherwise).
  * - Then every formatting action's chord (FORMAT_ACTIONS).
- * - ⌘↩ is not routed here: each host binds it (toggleBlockControl in
- *   lodeflow; the composer's send is Al's open question).
+ * - Each host binds ⌘↩ to toggleBlockControl. A host that sends/saves uses
+ *   ⇧⌘↩; unshifted ⌘↩ stays in the editor even when there is no control.
  */
 import { FORMAT_ACTIONS, type FormatAction } from "./actions";
 import { chordMatches } from "./chords";

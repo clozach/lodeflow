@@ -53,7 +53,7 @@ export const FORMATTED_IMAGE_LOOKS: readonly FormattedImageLook[] = [
  * below is present, so a plain image is `{ src }`. */
 export interface FormattedImageAttrs {
     src: string;
-    /** Plain words for readers who cannot see it; ≤ 500 characters. */
+    /** The visible caption and accessible alt text share these words; ≤ 500 characters. */
     alt?: string;
     /** A fraction of the text's width, 0.05–1, three decimals. */
     width?: number;

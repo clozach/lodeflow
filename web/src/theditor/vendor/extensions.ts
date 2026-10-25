@@ -48,6 +48,7 @@ import {
 import Paragraph from "@tiptap/extension-paragraph";
 import Text from "@tiptap/extension-text";
 import { Dropcursor, Gapcursor, UndoRedo } from "@tiptap/extensions";
+import { captionEditablePlugin, imageCaptionView } from "./theditor/core/image-caption";
 import {
     canonicalImageAttrs,
     FORMATTED_IMAGE_DEFAULTS,
@@ -107,7 +108,7 @@ const toggleInput = /^\s*>[vV]\s$/;
 const calloutInput = /^\s*>!\s$/;
 
 /** The default chords that would shadow the conversation's own (⌥⌘1–3
- * marks, ⌥⌘C Copy prompt, ⌘↩ send) or a formatting chord's new home. */
+ * marks, ⌥⌘C Copy prompt, ⇧⌘↩ send) or a formatting chord's new home. */
 const DROPPED_CHORD = /Alt|Mod-Shift|Shift-Mod|Mod-Enter/;
 
 function keepingOwnChords<T extends AnyExtension>(extension: T): T {
@@ -550,7 +551,18 @@ const FormattedImageNode = Node.create<{
                     ? img
                     : { ...img, src: shown, "data-kk-src": img.src },
             ],
+            [
+                "span",
+                { class: "kk-fm-caption kk-fm-caption-read" },
+                attrs.alt || "",
+            ],
         ];
+    },
+    addNodeView() {
+        return imageCaptionView(this.options.shownSrc);
+    },
+    addProseMirrorPlugins() {
+        return [captionEditablePlugin()];
     },
     renderText: ({ node }) => `![${node.attrs.alt || ""}]`,
     addCommands() {

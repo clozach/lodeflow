@@ -345,26 +345,6 @@ function hex(color: string | undefined): string {
 }
 
 export const TWEAK_ROWS: readonly TweakRow[] = [
-    // The picture's alt text (Al, 2026-10-24, proposed for him to see): the
-    // message's text reads it as ![…], so search, previews and mail do too.
-    {
-        id: "alt",
-        name: "description",
-        synonyms: ["alt", "alt text", "describe", "caption", "words"],
-        properties: ["alt"],
-        controls: [
-            {
-                kind: "text",
-                key: "alt",
-                label: "description",
-                hint: "What the picture shows, for anyone who cannot see it. The message's text reads it as ![…].",
-                placeholder: "What the picture shows",
-                maxLength: 500,
-                get: (ctx) => ctx.attrs.alt,
-                set: (_ctx, value) => ({ alt: value.trim() }),
-            },
-        ],
-    },
     lengthRow(
         "corners",
         "corners",

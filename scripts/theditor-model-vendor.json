@@ -4,11 +4,11 @@
   "files": {
     "formatted-message.ts": {
       "canonical": "packages/common-models/src/formatted-message.ts",
-      "sha256": "66680ee42d042add726178c6a6ab298ffc61437f37c7dbb386e6d822dacae0f0"
+      "sha256": "9a889510858ee609408d9ffc5cfec18b0afce3a16a0cf43664e53d84085fcdb6"
     },
     "extensions.ts": {
       "canonical": "apps/web/components/feedback/formatting/extensions.ts",
-      "sha256": "37904f8d410b30fd5d65537eae4f4c06f8ebeb45a89741636a9b1f1165ff28e5"
+      "sha256": "adacd1409e9acce332b82ad4388080c34eb4210f94dd0f1ed31a41248a108555"
     },
     "doc.ts": {
       "canonical": "apps/web/components/feedback/formatting/doc.ts",
@@ -16,7 +16,7 @@
     },
     "image-css.ts": {
       "canonical": "apps/web/components/feedback/formatting/image-css.ts",
-      "sha256": "d6bafc65811e2ba11a9fa597206d58cfdee443d22575d0c213dcd7ac8e69789a"
+      "sha256": "3fc5e7069db727f49eec2af1959cf6a616bc5a2afd6a701b013337cf21b6a597"
     },
     "design-measurements.ts": {
       "canonical": "packages/common-models/src/design-measurements.ts",

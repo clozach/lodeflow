@@ -65,6 +65,55 @@ export const IMAGE_CSS = `
     object-fit: inherit;
     object-position: inherit;
 }
+.kk-fm-caption {
+    display: grid;
+    position: relative;
+    min-height: 1.4em;
+    margin-top: 4px;
+    font-family: inherit;
+    font-weight: 400;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--kk-fm-caption-color, #595959);
+    text-align: center;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.dark .kk-fm-image { --kk-fm-caption-color: #b8b8b8; --kk-fm-caption-prompt: #a0a0a0; }
+.kk-fm-caption-input, .kk-fm-caption-mirror {
+    grid-area: 1 / 1;
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    font: inherit;
+    color: inherit;
+    line-height: inherit;
+    text-align: inherit;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.kk-fm-caption-input {
+    resize: none;
+    overflow: hidden;
+    height: 100%;
+    background: transparent;
+    border-radius: 2px;
+    outline: none;
+}
+.kk-fm-caption-input:focus-visible { outline: 1px solid currentColor; outline-offset: 2px; }
+.kk-fm-caption-mirror { visibility: hidden; pointer-events: none; }
+.kk-fm-caption[data-empty="true"]::after {
+    content: attr(data-prompt);
+    grid-area: 1 / 1;
+    color: var(--kk-fm-caption-prompt, #777);
+    pointer-events: none;
+    visibility: hidden;
+}
+.kk-fm-caption[data-empty="true"]:hover:not(:focus-within)::after { visibility: visible; }
 .kk-fm-image[style*="aspect-ratio"] > img {
     height: 100%;
 }

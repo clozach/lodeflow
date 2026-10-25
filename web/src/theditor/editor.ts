@@ -159,7 +159,7 @@ export const theditor: NodeEditorFactory = ({ host, initial, placeholder, label,
       attributes: { class: 'fm', role: 'textbox', 'aria-multiline': 'true', 'aria-label': label, spellcheck: 'true' },
       handleKeyDown: (view, event) => {
         if (passThrough || event.isComposing) return false;
-        if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.altKey) {
+        if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey) {
           // ⌘↵ is theditor's toggle block control in every tool that embeds it (Al, 2026-10-24): it
           // ticks or unticks the line's to-do, or opens or closes its toggle. The editor's keys win
           // while editing, so a line with neither keeps ⌘↵ to itself: no save, no new node.
@@ -188,13 +188,17 @@ export const theditor: NodeEditorFactory = ({ host, initial, placeholder, label,
       syncEmpty();
       hooks.onInput();
     },
-    // Focus moving into a magnet keeps Edit mode open; leaving words and magnets ends it.
-    onBlur: ({ event }) => {
-      if (!magnets?.contains(event.relatedTarget as Node | null)) hooks.onBlur();
-    },
   });
   syncEmpty();
   const live = editor;
+  // This includes embedded caption controls, whose own blur does not emit
+  // ProseMirror's editor blur event. A move inside the editor keeps it open.
+  const leave = (event: FocusEvent) => {
+    if (live.isDestroyed) return;
+    const next = event.relatedTarget as Node | null;
+    if (!el.contains(next) && !magnets?.contains(next)) hooks.onBlur();
+  };
+  el.addEventListener('focusout', leave);
   const layer = host.getRootNode() as ShadowRoot | Document;
   let pick: (() => void) | null = null;
   magnets = mountMagnets({
@@ -221,8 +225,9 @@ export const theditor: NodeEditorFactory = ({ host, initial, placeholder, label,
       return { text: wording.text, content: wording.content?.doc };
     },
     // The keyboard in a magnet is still editing this node.
-    hasFocus: () => !live.isDestroyed && (live.view.hasFocus() || !!magnets?.contains((layer as ShadowRoot | Document).activeElement)),
+    hasFocus: () => !live.isDestroyed && (live.view.hasFocus() || el.contains((layer as ShadowRoot | Document).activeElement) || !!magnets?.contains((layer as ShadowRoot | Document).activeElement)),
     destroy: () => {
+      el.removeEventListener('focusout', leave);
       magnets?.destroy();
       live.destroy();
     },

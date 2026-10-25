@@ -36,7 +36,10 @@ const FILES = [
  */
 const AHEAD = {};
 /** The vendored files import the package as a local stand-in (common-models.ts, lodeflow's own). */
-const REWRITE = [[/(from\s+["'])@courselit\/common-models(["'])/g, '$1./common-models$2']];
+const REWRITE = [
+  [/(from\s+["'])@courselit\/common-models(["'])/g, '$1./common-models$2'],
+  [/(from\s+["'])\.\/core\/image-caption(["'])/g, '$1./theditor/core/image-caption$2'],
+];
 /** UI never comes along: a canonical file importing these is not framework-free any more. */
 const FORBIDDEN = /from\s+["'](@config\/|react\b|react-dom|@tiptap\/react|next\/|\.\.\/)/;
 

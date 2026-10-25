@@ -1,5 +1,5 @@
 {
-  "source": "047b440f14c9d7b3db2d3dd5cfbdf53eb1d5e5b698848e20b9f67725902ed9e3",
+  "source": "52962d6a69095aedf04f1db2da32d205b6b71bf822b090a7b11c1ad3fce00d82",
   "folders": [
     "web/src/theditor/vendor/theditor/core",
     "web/src/theditor/vendor/theditor/vanilla",
@@ -34,7 +34,7 @@
     "web/src/theditor/vendor/theditor/vanilla/dom.ts": "8aedc24ebda9d3a24be275998fa289797a37f2c99b325cca84d83afe07155978",
     "web/src/theditor/vendor/theditor/vanilla/host-css.ts": "07e8d8dce8db05482161ced8fc8670178c9db004387b6c92b0792d1c2b1880f7",
     "web/src/theditor/vendor/theditor/vanilla/image-tools.ts": "ba832fd163b7ae5af545a51837a4257514ca3faacaf73d7654572d01c13cd335",
-    "web/src/theditor/vendor/theditor/vanilla/index.ts": "323cf3fe8842ef2322745a189fa2b1a88dc05674c0db14ed453b48fbea5095a8",
+    "web/src/theditor/vendor/theditor/vanilla/index.ts": "3133da4da3dc3857ac9e5cec71607ee66ddbb0ff87395ef529644140bed97f21",
     "web/src/theditor/vendor/theditor/vanilla/kitchen-sink.ts": "d4be1ead7bfca143e9a38eec19846e6a1ba9933e3802ab2a5d60d950f9549aa6",
     "web/src/theditor/vendor/theditor/vanilla/link-step.ts": "704a19bbcb4f76d3dccf3cc81077e8a87e386ccad9cdeccb15ab0b517bc35f7a",
     "web/src/theditor/vendor/theditor/vanilla/lozenge.ts": "d34aa45493a3a932c4e06087ef49f06b32f0958322fc09608bdfdbae746557c7",

@@ -138,6 +138,9 @@ export function mountMagnets(options: MagnetsOptions): Magnets {
     place();
 
     const refresh = () => {
+        // The host's earlier blur listener can destroy the editor while the
+        // emitter is still walking its original listener array.
+        if (disposed || editor.isDestroyed) return;
         toolbar.refresh();
         imageTools.refresh();
         reveal();

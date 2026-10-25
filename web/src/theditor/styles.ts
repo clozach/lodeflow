@@ -62,7 +62,13 @@ export const THEDITOR_CSS = /* css */ `
 :is(.t.fm, .fm-ed) hr { margin: .5em 0; border: 0; border-top: 1px solid var(--lf-fm-rule); }
 :is(.t.fm, .fm-ed) strong { font-weight: 650; }
 .fm-ed a { color: var(--lf-accent); text-decoration: underline; text-underline-offset: .12em; }
-.fm-ed { position: relative; cursor: text; user-select: text; -webkit-user-select: text; }
+.fm-ed {
+  position: relative; cursor: text; user-select: text; -webkit-user-select: text;
+  --kk-fm-caption-position: absolute;
+  --kk-fm-caption-top: calc(100% - 4px);
+  --kk-fm-caption-padding: 4px 4px 8px;
+  --kk-fm-caption-background: inherit;
+}
 .fm-ed .ProseMirror { outline: none; min-height: 1.38em; }
 .fm-ed.fm-empty::before { content: attr(data-ph); position: absolute; left: 0; top: 0; color: var(--lf-muted); font-style: italic; pointer-events: none; }
 .ProseMirror { position: relative; word-wrap: break-word; white-space: pre-wrap; white-space: break-spaces; font-variant-ligatures: none; font-feature-settings: "liga" 0; }

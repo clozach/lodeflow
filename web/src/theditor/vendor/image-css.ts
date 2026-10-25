@@ -116,19 +116,19 @@ export const IMAGE_CSS = `
     border-radius: 0 0 6px 6px;
 }
 .kk-fm-caption-add:focus-visible { outline: 1px solid currentColor; outline-offset: -1px; }
-/* Only the area below the picture reveals the prompt. At rest this transparent
-   target reaches below the thin frame; hover/tap grows the gray frame itself.
-   The empty row is a temporary layer: it never moves the image or adjacent
-   words. Prompt and editing share a mirror, so activation keeps its size. */
+/* Only the area below the picture reveals the prompt. Scrollable writing
+   fields grow the frame in flow so the caption cannot be clipped. A canvas
+   renderer may supply overlay geometry to keep its centered node anchored.
+   Prompt and editing share a mirror, so activation keeps the same size. */
 .kk-fm-caption[data-empty="true"] {
-    position: absolute;
-    top: calc(100% - 4px);
+    position: var(--kk-fm-caption-position, relative);
+    top: var(--kk-fm-caption-top, auto);
     left: 0;
     right: 0;
     margin: 0;
-    padding: 4px 4px 8px;
+    padding: var(--kk-fm-caption-padding, 4px 0);
     box-sizing: border-box;
-    background: inherit;
+    background: var(--kk-fm-caption-background, transparent);
     border-bottom-left-radius: inherit;
     border-bottom-right-radius: inherit;
     z-index: 1;

@@ -215,7 +215,12 @@ export const theditor: NodeEditorFactory = ({ host, initial, placeholder, label,
     // Floated above the node's painted box, not its text box.
     anchor: () => (host.closest('.node') as HTMLElement | null) ?? host,
     // The diagram's own floating magnets (its puck, say) keep their place; the toolbar keeps clear.
-    avoid: () => [...(layer as ParentNode).querySelectorAll<HTMLElement>('.ui.magnet')].filter((m) => !m.hidden && m.offsetParent).map((m) => m.getBoundingClientRect()),
+    avoid: () => [
+      ...[...(layer as ParentNode).querySelectorAll<HTMLElement>('.ui.magnet')].filter((m) => !m.hidden && m.offsetParent),
+      // Empty captions open below the node without changing the canvas layout.
+      // Their painted area must remain reachable when the toolbar flips below.
+      ...el.querySelectorAll<HTMLElement>('.kk-fm-caption[data-empty="true"]:is([data-state="prompt"], [data-state="editing"])'),
+    ].map((m) => m.getBoundingClientRect()),
     skin: { iconUrl: (name) => ICON_URLS[name] ?? '' },
     pickImage: () => pick?.(),
     dark: () => drawnDark(host),

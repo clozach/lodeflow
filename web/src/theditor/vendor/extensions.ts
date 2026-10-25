@@ -458,7 +458,9 @@ function imageFromElement(element: HTMLElement) {
         element.tagName === "IMG"
             ? element
             : element.querySelector<HTMLImageElement>("img");
-    const src = img?.getAttribute("src") || "";
+    // A picture shown through another address keeps its stored one here.
+    const src =
+        img?.getAttribute("data-kk-src") || img?.getAttribute("src") || "";
     if (!isFormattedImageSrc(src)) return false;
     const width = parseFloat(
         element.style?.getPropertyValue("--kk-fm-image-width") || "",
@@ -486,13 +488,20 @@ function imageFromElement(element: HTMLElement) {
 
 /** An inline image (Al, 2026-10-23): a round-rect thumb proportional to the
  * original, a third of the text's width by default; three share a row. */
-const FormattedImageNode = Node.create({
+const FormattedImageNode = Node.create<{
+    /** How a host shows a stored address (a saved message's own photo
+     * route); the stored address otherwise. */
+    shownSrc?: (src: string) => string;
+}>({
     name: "image",
     inline: true,
     group: "inline",
     atom: true,
     draggable: true,
     selectable: true,
+    addOptions() {
+        return { shownSrc: undefined };
+    },
     addAttributes() {
         // Read from HTML by the node's own rule (imageFromElement), never
         // attribute by attribute: the span's whole `style` is not the
@@ -527,10 +536,20 @@ const FormattedImageNode = Node.create({
         const attrs = storedImageAttrs(node.attrs) || {
             src: "",
         };
+        const img = imageElementAttributes(attrs);
+        const shown =
+            img.src && this.options.shownSrc
+                ? this.options.shownSrc(img.src)
+                : img.src;
         return [
             "span",
             imageSpanAttributes(attrs),
-            ["img", imageElementAttributes(attrs)],
+            [
+                "img",
+                shown === img.src
+                    ? img
+                    : { ...img, src: shown, "data-kk-src": img.src },
+            ],
         ];
     },
     renderText: ({ node }) => `![${node.attrs.alt || ""}]`,
@@ -711,9 +730,17 @@ const FormattedHorizontalRule = HorizontalRule.extend({
     addInputRules: () => [],
 });
 
+/** What a host may tell the editor: how it shows a stored picture address
+ * (a saved message's own photo route). Copying keeps the stored address. */
+export interface FormattedExtensionOptions {
+    imageSrc?: (src: string) => string;
+}
+
 /** Everything the formatted message editor understands, and nothing more:
  * the stored model (common-models/formatted-message) names the same set. */
-export function formattedExtensions(): AnyExtension[] {
+export function formattedExtensions(
+    options: FormattedExtensionOptions = {},
+): AnyExtension[] {
     return [
         Document,
         keepingOwnChords(Paragraph),
@@ -749,7 +776,7 @@ export function formattedExtensions(): AnyExtension[] {
         DetailsSummary,
         DetailsContent,
         Callout,
-        FormattedImageNode,
+        FormattedImageNode.configure({ shownSrc: options.imageSrc }),
         TypedShortcuts,
         UndoRedo,
         Dropcursor,

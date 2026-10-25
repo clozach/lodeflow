@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
-import {chromium,webkit} from 'playwright';
+import {chromium,firefox,webkit} from 'playwright';
 const core=await readFile(new URL('../dist/lode-flow.iife.js',import.meta.url));
 const editor=await readFile(new URL('../dist/theditor.iife.js',import.meta.url));
 const html='<!doctype html><style>body{margin:0}lode-flow{height:100vh}</style><script src="/core.js"></script><script src="/theditor.js"></script><lode-flow node-width="330"></lode-flow>';

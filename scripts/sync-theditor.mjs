@@ -2,8 +2,8 @@
 //   node scripts/sync-theditor.mjs            copy every canonical file (header added, imports rewritten)
 //   node scripts/sync-theditor.mjs --check    report drift; exit 1 on any unexplained difference
 //   --from <checkout>   a checkout of the swamikk CourseLit fork (https://github.com/clozach/swamikk) to copy
-//                       from; default: $THEDITOR_SOURCE. Unset: the copies are the source (--check passes
-//                       with a note; copying needs a checkout).
+//                       from; default: $THEDITOR_SOURCE. Unset: --check verifies the portable checksum
+//                       receipt written by the last canonical sync; copying still needs a checkout.
 // A copy may run ahead of its canonical file (AHEAD below) while the canonical repository has not yet
 // landed a change lodeflow needs. --check accepts it only while the canonical file is still exactly the
 // one it went ahead of; the moment that file changes (or appears), the check fails so someone reconciles.
@@ -18,16 +18,6 @@ const args = process.argv.slice(2);
 const check = args.includes('--check');
 const fromAt = args.indexOf('--from');
 const given = fromAt >= 0 ? args[fromAt + 1] ?? '' : process.env.THEDITOR_SOURCE || '';
-if (!given) {
-  if (fromAt < 0 && check) {
-    console.log('sync-theditor: THEDITOR_SOURCE is unset: the vendored copies are the source; nothing to compare.');
-    process.exit(0);
-  }
-  console.error('sync-theditor: no canonical checkout to copy from (pass --from <checkout> or set THEDITOR_SOURCE)');
-  process.exit(1);
-}
-const source = resolve(given);
-
 const FILES = [
   { local: 'formatted-message.ts', canonical: 'packages/common-models/src/formatted-message.ts' },
   { local: 'extensions.ts', canonical: 'apps/web/components/feedback/formatting/extensions.ts' },
@@ -53,6 +43,25 @@ const FORBIDDEN = /from\s+["'](@config\/|react\b|react-dom|@tiptap\/react|next\/
 const sha = (text) => createHash('sha256').update(text).digest('hex');
 const header = (canonical) => `// Vendored copy; do not edit here. Canonical: the swamikk CourseLit fork, https://github.com/clozach/swamikk, ${canonical}\n// Refresh with \`node scripts/sync-theditor.mjs\`; \`--check\` reports drift.\n`;
 const expected = (file, text) => header(file.canonical) + REWRITE.reduce((t, [from, to]) => t.replace(from, to), text);
+
+const receipt = resolve(here, 'theditor-model-vendor.json');
+const snapshot = () => ({
+  version: 1,
+  source: 'https://github.com/clozach/swamikk',
+  files: Object.fromEntries(FILES.map(file => [file.local, {canonical: file.canonical, sha256: sha(readFileSync(resolve(vendor, file.local)))}])),
+});
+function checkReceipt() {
+  const recorded = JSON.parse(readFileSync(receipt, 'utf8'));
+  if (JSON.stringify(recorded) !== JSON.stringify(snapshot())) {
+    throw new Error('sync-theditor: model copies differ from the canonical sync receipt; re-sync with --from <checkout>');
+  }
+  console.log(`✓ model receipt: ${FILES.length} files match the canonical sync`);
+}
+if (!given) {
+  if (fromAt < 0 && check) { checkReceipt(); process.exit(0); }
+  throw new Error('sync-theditor: pass --from <checkout> or set THEDITOR_SOURCE to copy canonical files');
+}
+const source = resolve(given);
 
 if (!existsSync(source)) {
   console.error(`sync-theditor: canonical checkout not found at ${source} (pass --from <checkout> or set THEDITOR_SOURCE)`);
@@ -103,5 +112,9 @@ for (const file of FILES) {
   mkdirSync(dirname(to), {recursive:true});
   writeFileSync(to, want);
   console.log(`→ ${file.local}: copied from ${file.canonical}${ahead ? ' (it was ahead of canonical: remove it from AHEAD once the change is confirmed there)' : ''}`);
+}
+if (!failed) {
+  if (check) checkReceipt();
+  else writeFileSync(receipt, JSON.stringify(snapshot(), null, 2) + '\n');
 }
 process.exit(failed ? 1 : 0);

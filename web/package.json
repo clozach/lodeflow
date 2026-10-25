@@ -39,8 +39,8 @@
     "dev": "node build.mjs --watch",
     "typecheck": "tsc --noEmit",
     "test": "node test/model.mjs && node test/loose.mjs && node test/reverse.mjs && node test/fixture-controls.mjs && node test/geometry.mjs && node test/history.mjs && node test/limits.mjs && node test/placement.mjs && node test/presentation.mjs && node test/controls.mjs && node test/forks.mjs && node test/child-reverse.mjs && node test/copy-paste.mjs && node test/rotation.mjs && node test/e2e.mjs && node test/theditor.mjs && node test/theditor-magnets.mjs",
-    "prebuild": "node ../scripts/check-theditor-vendor.mjs",
-    "pretest": "node ../scripts/check-theditor-vendor.mjs"
+    "prebuild": "node ../scripts/check-theditor-vendor.mjs && node ../scripts/sync-theditor.mjs --check",
+    "pretest": "node ../scripts/check-theditor-vendor.mjs && node ../scripts/sync-theditor.mjs --check"
   },
   "peerDependencies": {
     "react": ">=18"

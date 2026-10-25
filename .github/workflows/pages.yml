@@ -25,6 +25,8 @@ jobs:
         run: corepack enable && corepack prepare pnpm@10.26.0 --activate
       - name: Install web dependencies
         run: pnpm --dir web install --frozen-lockfile
+      - name: Verify shared editor copies
+        run: node scripts/check-theditor-vendor.mjs && node scripts/sync-theditor.mjs --check
       - name: Build WebAssembly engine
         run: rustup target add wasm32-unknown-unknown && bash scripts/build-wasm.sh
       - name: Build web component
@@ -35,7 +37,7 @@ jobs:
         run: pnpm --dir web exec playwright install --with-deps chromium firefox webkit
       - name: Component tests
         working-directory: web
-        run: node test/model.mjs && node test/loose.mjs && node test/reverse.mjs && node test/geometry.mjs && node test/history.mjs && node test/fixture-controls.mjs && node test/theme.mjs && node test/limits.mjs && node test/placement.mjs && node test/presentation.mjs && node test/controls.mjs && node test/forks.mjs && node test/child-reverse.mjs && node test/copy-paste.mjs && node test/rotation.mjs && node test/theditor.mjs && node test/e2e.mjs
+        run: node test/model.mjs && node test/loose.mjs && node test/reverse.mjs && node test/geometry.mjs && node test/history.mjs && node test/fixture-controls.mjs && node test/theme.mjs && node test/limits.mjs && node test/placement.mjs && node test/presentation.mjs && node test/controls.mjs && node test/forks.mjs && node test/child-reverse.mjs && node test/copy-paste.mjs && node test/rotation.mjs && node test/theditor.mjs && node test/theditor-magnets.mjs && node test/e2e.mjs
       - name: Build tutorial
         run: node scripts/build-site.mjs
       - name: Tutorial tests

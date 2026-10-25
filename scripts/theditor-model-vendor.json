@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "source": "https://github.com/clozach/swamikk",
+  "files": {
+    "formatted-message.ts": {
+      "canonical": "packages/common-models/src/formatted-message.ts",
+      "sha256": "66680ee42d042add726178c6a6ab298ffc61437f37c7dbb386e6d822dacae0f0"
+    },
+    "extensions.ts": {
+      "canonical": "apps/web/components/feedback/formatting/extensions.ts",
+      "sha256": "37904f8d410b30fd5d65537eae4f4c06f8ebeb45a89741636a9b1f1165ff28e5"
+    },
+    "doc.ts": {
+      "canonical": "apps/web/components/feedback/formatting/doc.ts",
+      "sha256": "158097f7e2459acdc1000c7c11db244321b9446a629a002d8d24891707cde6f0"
+    },
+    "image-css.ts": {
+      "canonical": "apps/web/components/feedback/formatting/image-css.ts",
+      "sha256": "d6bafc65811e2ba11a9fa597206d58cfdee443d22575d0c213dcd7ac8e69789a"
+    },
+    "design-measurements.ts": {
+      "canonical": "packages/common-models/src/design-measurements.ts",
+      "sha256": "69a09ee973f4fbf6ab4f2ac590cc70a0671af976833004b44add247cd16bb346"
+    },
+    "hover-grace/policy.ts": {
+      "canonical": "apps/web/lib/hover-grace/policy.ts",
+      "sha256": "0e9f8c9b4319c6d687806647d5c9d68a6601da50677b40acceda918abf9c1aed"
+    },
+    "hover-grace/controller.ts": {
+      "canonical": "apps/web/lib/hover-grace/controller.ts",
+      "sha256": "96814d5ee7a66017ff20ef4800de8ed511ba869c5d1557b37f790e1f89f5621f"
+    }
+  }
+}

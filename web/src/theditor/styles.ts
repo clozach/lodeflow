@@ -15,11 +15,11 @@ export const THEDITOR_CSS = /* css */ `
 }
 /* The image stylesheet's dark rules hang off a .dark page class; a diagram's own dark theme gets the same
    (the printed-photo paper stays light, shadows deepen). */
-:host([theme="dark"]) { --kk-fm-image-paper: #f3ede2; --kk-fm-caption-color: #b8b8b8; --kk-fm-caption-prompt: #a8a8a8; --kk-fm-caption-prompt-paper: rgb(20 20 20 / .88); }
+:host([theme="dark"]) { --kk-fm-image-paper: #f3ede2; --kk-fm-caption-color: #b8b8b8; --kk-fm-caption-prompt: #a8a8a8; }
 :host([theme="dark"]) .kk-fm-image[data-look="inset"] { box-shadow: inset 0 1px 4px rgb(0 0 0 / .5), inset 0 0 0 1px rgb(255 255 255 / .08); }
 :host([theme="dark"]) .kk-fm-image:is([data-look="floating"], [data-look="physical"]) { box-shadow: 0 2px 6px rgb(0 0 0 / .5), 0 10px 24px rgb(0 0 0 / .4); }
 @media (prefers-color-scheme: dark) {
-  :host(:not([theme="light"]):not([theme="blueprint"])) { --kk-fm-image-paper: #f3ede2; --kk-fm-caption-color: #b8b8b8; --kk-fm-caption-prompt: #a8a8a8; --kk-fm-caption-prompt-paper: rgb(20 20 20 / .88); }
+  :host(:not([theme="light"]):not([theme="blueprint"])) { --kk-fm-image-paper: #f3ede2; --kk-fm-caption-color: #b8b8b8; --kk-fm-caption-prompt: #a8a8a8; }
   :host(:not([theme="light"]):not([theme="blueprint"])) .kk-fm-image[data-look="inset"] { box-shadow: inset 0 1px 4px rgb(0 0 0 / .5), inset 0 0 0 1px rgb(255 255 255 / .08); }
   :host(:not([theme="light"]):not([theme="blueprint"])) .kk-fm-image:is([data-look="floating"], [data-look="physical"]) { box-shadow: 0 2px 6px rgb(0 0 0 / .5), 0 10px 24px rgb(0 0 0 / .4); }
 }

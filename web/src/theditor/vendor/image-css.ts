@@ -38,6 +38,7 @@ export const IMAGE_LOOK_BASE = {
  * images at width .333 fit; a fourth wraps; one at width 1 is full width. */
 export const IMAGE_CSS = `
 .kk-fm-image {
+    position: relative;
     --kk-fm-image-gap: ${IMAGE_GAP}px;
     display: inline-block;
     vertical-align: top;
@@ -79,8 +80,8 @@ export const IMAGE_CSS = `
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
-.dark .kk-fm-image { --kk-fm-caption-color: #b8b8b8; --kk-fm-caption-prompt: #a8a8a8; --kk-fm-caption-prompt-paper: rgb(20 20 20 / 0.88); }
-.kk-fm-caption-input, .kk-fm-caption-mirror {
+.dark .kk-fm-image { --kk-fm-caption-color: #b8b8b8; --kk-fm-caption-prompt: #a8a8a8; }
+.kk-fm-caption-input, .kk-fm-caption-mirror, .kk-fm-caption-add {
     grid-area: 1 / 1;
     display: block;
     box-sizing: border-box;
@@ -105,52 +106,65 @@ export const IMAGE_CSS = `
     border-radius: 2px;
     outline: none;
 }
-.kk-fm-caption-input:focus-visible { outline: 1px solid currentColor; outline-offset: 2px; }
 .kk-fm-caption-input:disabled { opacity: 1; color: inherit; -webkit-text-fill-color: currentColor; cursor: default; }
 .kk-fm-caption-mirror { visibility: hidden; pointer-events: none; }
-.kk-fm-caption[data-empty="true"]::after {
-    content: attr(data-prompt);
-    grid-area: 1 / 1;
+.kk-fm-caption-add {
     color: var(--kk-fm-caption-prompt, #6b6b6b);
-    pointer-events: none;
-    visibility: hidden;
+    background: transparent;
+    cursor: text;
+    appearance: none;
+    border-radius: 0 0 6px 6px;
 }
-/* An empty caption at rest takes no room: the frame's own padding is its
-   thin edge. Its field sits just below the picture's foot, so a click there or Tab
-   reaches it; the prompt shows there on hover, out of flow, moving nothing.
-   Focus opens the caption in flow, where the words will go. */
-.kk-fm-caption[data-empty="true"]:not(:focus-within) {
+.kk-fm-caption-add:focus-visible { outline: 1px solid currentColor; outline-offset: -1px; }
+/* Only the area below the picture reveals the prompt. At rest this transparent
+   target reaches below the thin frame; hover/tap grows the gray frame itself.
+   The empty row is a temporary layer: it never moves the image or adjacent
+   words. Prompt and editing share a mirror, so activation keeps its size. */
+.kk-fm-caption[data-empty="true"] {
+    position: absolute;
+    top: calc(100% - 4px);
+    left: 0;
+    right: 0;
+    margin: 0;
+    padding: 4px 4px 8px;
+    box-sizing: border-box;
+    background: inherit;
+    border-bottom-left-radius: inherit;
+    border-bottom-right-radius: inherit;
+    z-index: 1;
+}
+.kk-fm-caption[data-state="rest"] {
     display: block;
     height: 0;
     min-height: 0;
-    margin-top: 0;
+    padding: 0;
+    background: transparent;
 }
-.kk-fm-caption[data-empty="true"]:not(:focus-within) > .kk-fm-caption-mirror { display: none; }
-.kk-fm-caption[data-empty="true"]:not(:focus-within) > .kk-fm-caption-input,
-.kk-fm-caption[data-empty="true"]:not(:focus-within)::after {
+.kk-fm-caption[data-state="rest"] > .kk-fm-caption-mirror { display: none; }
+.kk-fm-caption[data-state="rest"] > .kk-fm-caption-add {
     position: absolute;
     left: 0;
     right: 0;
     top: 0;
-    bottom: auto;
-    height: auto;
-    min-height: 1.4em;
-    padding: 0;
-}
-.kk-fm-caption[data-empty="true"]:not(:focus-within) > .kk-fm-caption-input {
+    min-height: calc(1.4em + 8px);
+    padding: 4px;
     color: transparent;
-    cursor: text;
 }
-.kk-fm-caption[data-empty="true"]:not(:focus-within)::after {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-sizing: border-box;
-    border-radius: 6px;
-    background: var(--kk-fm-caption-prompt-paper, rgb(255 255 255 / 0.9));
+.kk-fm-caption[data-state="rest"] > .kk-fm-caption-input,
+.kk-fm-caption[data-state="prompt"] > .kk-fm-caption-input {
     visibility: hidden;
+    pointer-events: none;
 }
-.kk-fm-image:hover > .kk-fm-caption[data-empty="true"]:not(:focus-within)::after { visibility: visible; }
+.kk-fm-caption[data-state="editing"] > .kk-fm-caption-add,
+.kk-fm-caption[data-state="caption"] > .kk-fm-caption-add {
+    opacity: 0;
+    pointer-events: none;
+}
+.kk-fm-caption[data-empty="true"][data-state="editing"] > .kk-fm-caption-input {
+    align-self: center;
+    height: 1.4em;
+    padding-block: 0;
+}
 /* Read-only: an empty caption is nothing at all. */
 .kk-fm-caption[data-empty="true"]:has(> .kk-fm-caption-input:disabled) { display: none; }
 .kk-fm-image[style*="aspect-ratio"] > img {

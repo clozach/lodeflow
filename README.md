@@ -254,7 +254,7 @@ lode-flow {
 
 Collapsing and expanding a group uses its collapsed card as the common origin. Member cards, nested outlines, junction dots, internal edge labels and hidden routes appear from or return to that center as it moves with the layout. Undo and quick reversals start from the rendered frame already on screen. Camera fitting and the final layout are unchanged; this behavior needs no extra option or host-specific styling.
 
-Pictures begin at **1/3 of the text width**. Tweak → width offers **1/3, 2/3 and 3/3** presets plus a custom percentage; the default node width remains **176 px**. Picture magnets match the text formatters (36 px desktop, 44 px touch), and tilt accepts −180° through 180°. A picture without a caption keeps a thin frame: hover shows **Add caption**, focus opens its caption field. The caption and alt text are one stored value, shared by React and vanilla consumers.
+Pictures begin at **1/3 of the text width**. Tweak → width offers **1/3, 2/3 and 3/3** presets plus a custom percentage; the default node width remains **176 px**. Picture magnets match the text formatters (36 px desktop, 44 px touch), and tilt accepts −180° through 180°. A picture without a caption keeps a thin frame. Hover **below the image** (first tap on touch) to open the gray **Add caption** area; click it, press Return while the prompt is showing, or tap again to place the caret. Prompt and empty field keep the same bounds, and the image stays put. Moving away collapses an unfocused prompt; leaving an empty field restores the thin frame. The caption and alt text are one stored value, shared by React and vanilla consumers.
 
 ## Gestures and keys
 
